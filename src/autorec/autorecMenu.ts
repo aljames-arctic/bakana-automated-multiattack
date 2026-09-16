@@ -5,7 +5,7 @@ import { parseMultiattackTemplate } from '../multiattack/parser.js';
 import { stripOrderPrefix } from '../multiattack/executor.js';
 import { localize } from '../lib/utils.js';
 import { notify } from '../lib/logger.js';
-import type { MultiattackSequence } from '../types/global.d.js';
+import type { MultiattackSequence, AutorecEntry } from '../types/global.d.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const BaseApp = (foundry as any)?.applications?.api?.ApplicationV2 ?? class {};
@@ -166,17 +166,21 @@ export class AutorecMenuApplication extends BaseApp {
      * builds both abstract template and concrete sequences, and populates the editor.
      * If the currently selected entry is already filled, creates a new entry first to prevent overwriting.
      */
-    async handleActorDrop(actor: Actor, mode: 'template' | 'override' = 'template'): Promise<boolean> {
+    async handleActorDrop(actor: Actor, requestedMode?: 'template' | 'override'): Promise<boolean> {
         if (!actor) return false;
-
         const items = adapter.getActorItems(actor);
-        const maItem = items.find((i: Item) => adapter.isMultiattackItem(i));
+        const maItem = items.find((i) => adapter.isMultiattackItem(i));
         if (!maItem) {
-            notify.warn(`No Multiattack feature found on actor "${actor.name}".`);
+            notify.warn(`Actor "${actor.name}" does not have a Multiattack feature.`);
             return false;
         }
 
         const rawDescription = adapter.getItemDescription(maItem);
+        if (!rawDescription) {
+            notify.warn(`Multiattack feature on "${actor.name}" has an empty description.`);
+            return false;
+        }
+
         const { template, itemMap } = abstractMultiattackDescription(rawDescription, items, actor.name);
         const parsedTemplateSeq = parseMultiattackTemplate(template);
         const templateSequence: MultiattackSequence = parsedTemplateSeq ?? [[['<ITEM_0>']]];
@@ -192,9 +196,27 @@ export class AutorecMenuApplication extends BaseApp {
             )
         );
 
-        const targetPattern = mode === 'override' ? `${actor.name}::${maItem.name}` : template;
-        const existingMatch = autorecManager.findDuplicatePattern(targetPattern, this._selectedId ?? undefined);
         const existingSelected = autorecManager.getAllEntries().find((e) => e.id === this._selectedId);
+
+        // Determine effective mode:
+        // If not explicitly requested, and the monster's general template already exists in Templates,
+        // automatically default to 'override' so the existing general template is preserved for all other monsters.
+        let effectiveMode: 'template' | 'override' = requestedMode ?? 'template';
+        const existingTemplateMatch = autorecManager.findDuplicatePattern(template, this._selectedId ?? undefined, 'template');
+
+        if (!requestedMode) {
+            if (existingSelected?.type === 'override') {
+                effectiveMode = 'override';
+            } else if (existingTemplateMatch) {
+                effectiveMode = 'override';
+                notify.info(
+                    `"${actor.name}" matches existing template "${existingTemplateMatch.name}". Defaulted to Monster Override ("${actor.name}::${maItem.name}") so other monsters using "${existingTemplateMatch.name}" are not affected.`
+                );
+            }
+        }
+
+        const targetPattern = effectiveMode === 'override' ? `${actor.name}::${maItem.name}` : template;
+        const existingMatch = autorecManager.findDuplicatePattern(targetPattern, this._selectedId ?? undefined, effectiveMode);
 
         if (existingMatch) {
             if (existingSelected && !existingSelected.pattern.trim() && existingSelected.id !== existingMatch.id) {
@@ -212,32 +234,36 @@ export class AutorecMenuApplication extends BaseApp {
                 itemMap,
                 templateSequence,
                 concreteSequence,
-                mode
+                mode: effectiveMode
             };
             this._pendingName = existingMatch.name;
             this._pendingPattern = existingMatch.pattern;
             this._pendingType = existingMatch.type;
             this._workingSequence = JSON.parse(JSON.stringify(existingMatch.sequence));
-            notify.info(`"${actor.name}" already matches existing pattern "${existingMatch.name}"! Switched to existing entry.`);
+            notify.info(`"${actor.name}" already matches existing ${effectiveMode === 'override' ? 'override' : 'template'} "${existingMatch.name}"! Switched to existing entry.`);
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (this as any).render?.();
             return true;
         }
 
-        // If no entry is selected OR the selected entry is already filled (and not already in droppedActor mode),
-        // create a brand-new entry so existing filled templates are never overwritten.
+        // If no entry is selected, OR the selected entry is already filled in a different category,
+        // create a brand-new entry in the target category so existing filled templates are never overwritten.
         const isExistingFilled = Boolean(existingSelected && existingSelected.pattern.trim().length > 0 && !this._droppedActor);
+        const isSwitchingCategoryFromFilled = Boolean(existingSelected && existingSelected.pattern.trim().length > 0 && existingSelected.type !== effectiveMode);
 
-        if (!this._selectedId || isExistingFilled) {
+        if (!this._selectedId || isExistingFilled || isSwitchingCategoryFromFilled) {
             const created = await autorecManager.registerEntry({
                 id: '',
-                name: `${actor.name} Pattern`,
-                type: mode,
+                name: effectiveMode === 'override' ? `${actor.name} Override` : `${actor.name} Pattern`,
+                type: effectiveMode,
                 pattern: '',
                 sequence: [],
                 enabled: true
             });
             this._selectedId = created.id;
+        } else if (existingSelected && !existingSelected.pattern.trim()) {
+            existingSelected.type = effectiveMode;
+            existingSelected.name = effectiveMode === 'override' ? `${actor.name} Override` : `${actor.name} Pattern`;
         }
 
         this._droppedActor = {
@@ -251,10 +277,10 @@ export class AutorecMenuApplication extends BaseApp {
             itemMap,
             templateSequence,
             concreteSequence,
-            mode
+            mode: effectiveMode
         };
 
-        this._applyDroppedActorMode(mode);
+        this._applyDroppedActorMode(effectiveMode);
         notify.info(`Loaded Multiattack from "${actor.name}"!`);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (this as any).render?.();
@@ -306,11 +332,35 @@ export class AutorecMenuApplication extends BaseApp {
         const container = document.createElement('div');
         container.className = 'bam-autorec-container';
 
-        const sidebarItemsHtml = entries.map((e) => `
+        const templateEntries = entries.filter((e) => e.type !== 'override');
+        const overrideEntries = entries.filter((e) => e.type === 'override');
+
+        const renderSidebarItem = (e: AutorecEntry): string => `
             <div class="bam-sidebar-item ${e.id === selected?.id ? 'active' : ''}" data-entry-id="${e.id}">
                 <span>${e.name}</span>
             </div>
-        `).join('');
+        `;
+
+        const sidebarItemsHtml = `
+            <div class="bam-sidebar-section">
+                <div class="bam-sidebar-section-header" style="padding: 8px 10px 6px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #818cf8; background: rgba(30, 36, 54, 0.85); border-bottom: 1px solid #334155; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 1;">
+                    <span><i class="fas fa-scroll" style="margin-right: 6px;"></i> Templates</span>
+                    <span style="background: #312e81; color: #c7d2fe; padding: 1px 6px; border-radius: 10px; font-size: 0.68rem;">${templateEntries.length}</span>
+                </div>
+                ${templateEntries.length > 0
+                    ? templateEntries.map(renderSidebarItem).join('')
+                    : `<div style="padding: 8px 12px; font-size: 0.75rem; color: #64748b; font-style: italic;">No templates</div>`}
+            </div>
+            <div class="bam-sidebar-section" style="margin-top: 6px;">
+                <div class="bam-sidebar-section-header" style="padding: 8px 10px 6px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #fbbf24; background: rgba(30, 36, 54, 0.85); border-top: 1px solid #334155; border-bottom: 1px solid #334155; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 1;">
+                    <span><i class="fas fa-dragon" style="margin-right: 6px;"></i> Monster Overrides</span>
+                    <span style="background: #78350f; color: #fde68a; padding: 1px 6px; border-radius: 10px; font-size: 0.68rem;">${overrideEntries.length}</span>
+                </div>
+                ${overrideEntries.length > 0
+                    ? overrideEntries.map(renderSidebarItem).join('')
+                    : `<div style="padding: 8px 12px; font-size: 0.75rem; color: #64748b; font-style: italic;">No monster overrides</div>`}
+            </div>
+        `;
 
         const displayName = this._pendingName ?? selected?.name ?? '';
         const displayPattern = this._pendingPattern ?? selected?.pattern ?? '';
@@ -678,7 +728,7 @@ export class AutorecMenuApplication extends BaseApp {
                     });
                     this._selectedId = created.id;
                     this._droppedActor = null;
-                    await this.handleActorDrop(actor, 'template');
+                    await this.handleActorDrop(actor);
                 } catch (_err) {
                     notify.warn('Invalid drag-and-drop payload.');
                 }
@@ -721,7 +771,7 @@ export class AutorecMenuApplication extends BaseApp {
                         notify.warn('Could not resolve an Actor from the dropped item.');
                         return;
                     }
-                    await this.handleActorDrop(actor, 'template');
+                    await this.handleActorDrop(actor);
                 } catch (_err) {
                     notify.warn('Invalid drag-and-drop payload.');
                 }
@@ -729,13 +779,60 @@ export class AutorecMenuApplication extends BaseApp {
         }
 
         // Dropped actor mode switch buttons
-        root.querySelector('#bam-drop-mode-template')?.addEventListener('click', () => {
+        root.querySelector('#bam-drop-mode-template')?.addEventListener('click', async () => {
+            if (!this._droppedActor) return;
+            const currentSelf = autorecManager.getAllEntries().find((e) => e.id === this._selectedId);
+            const existingTemplate = autorecManager.findDuplicatePattern(this._droppedActor.templateText, undefined, 'template');
+            if (existingTemplate) {
+                if (currentSelf && !currentSelf.pattern.trim() && currentSelf.id !== existingTemplate.id) {
+                    await autorecManager.deleteEntry(currentSelf.id, false);
+                }
+                this._selectedId = existingTemplate.id;
+                notify.info(`Switched to existing template "${existingTemplate.name}".`);
+            } else if (currentSelf && currentSelf.type === 'override' && currentSelf.pattern.trim()) {
+                const created = await autorecManager.registerEntry({
+                    id: '',
+                    name: `${this._droppedActor.actorName} Pattern`,
+                    type: 'template',
+                    pattern: '',
+                    sequence: [],
+                    enabled: true
+                }, false);
+                this._selectedId = created.id;
+            } else if (currentSelf && !currentSelf.pattern.trim()) {
+                currentSelf.type = 'template';
+                currentSelf.name = `${this._droppedActor.actorName} Pattern`;
+            }
             this._applyDroppedActorMode('template');
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (this as any).render?.();
         });
 
-        root.querySelector('#bam-drop-mode-override')?.addEventListener('click', () => {
+        root.querySelector('#bam-drop-mode-override')?.addEventListener('click', async () => {
+            if (!this._droppedActor) return;
+            const currentSelf = autorecManager.getAllEntries().find((e) => e.id === this._selectedId);
+            const existingOverride = autorecManager.findDuplicatePattern(this._droppedActor.overrideKey, undefined, 'override');
+            if (existingOverride) {
+                if (currentSelf && !currentSelf.pattern.trim() && currentSelf.id !== existingOverride.id) {
+                    await autorecManager.deleteEntry(currentSelf.id, false);
+                }
+                this._selectedId = existingOverride.id;
+                notify.info(`Switched to existing override "${existingOverride.name}".`);
+            } else if (currentSelf && currentSelf.type === 'template' && currentSelf.pattern.trim()) {
+                const created = await autorecManager.registerEntry({
+                    id: '',
+                    name: `${this._droppedActor.actorName} Override`,
+                    type: 'override',
+                    pattern: '',
+                    sequence: [],
+                    enabled: true
+                }, false);
+                this._selectedId = created.id;
+                notify.info(`Created new Monster Override for "${this._droppedActor.actorName}" so template "${currentSelf.name}" remains unchanged.`);
+            } else if (currentSelf && !currentSelf.pattern.trim()) {
+                currentSelf.type = 'override';
+                currentSelf.name = `${this._droppedActor.actorName} Override`;
+            }
             this._applyDroppedActorMode('override');
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (this as any).render?.();
@@ -979,10 +1076,12 @@ export class AutorecMenuApplication extends BaseApp {
                 return;
             }
 
-            const existingDuplicate = autorecManager.findDuplicatePattern(rawPattern, this._selectedId);
+            const currentSelf = autorecManager.getAllEntries().find((e) => e.id === this._selectedId);
+            const entryType: 'override' | 'template' = this._pendingType ?? (rawPattern.includes('::') ? 'override' : (currentSelf?.type ?? 'template'));
+
+            const existingDuplicate = autorecManager.findDuplicatePattern(rawPattern, this._selectedId, entryType);
             if (existingDuplicate) {
-                notify.warn(`Pattern already exists under "${existingDuplicate.name}". Switched to existing entry.`);
-                const currentSelf = autorecManager.getAllEntries().find((e) => e.id === this._selectedId);
+                notify.warn(`Pattern already exists in ${entryType === 'override' ? 'Monster Overrides' : 'Templates'} under "${existingDuplicate.name}". Switched to existing entry.`);
                 if (currentSelf && !currentSelf.pattern.trim()) {
                     await autorecManager.deleteEntry(this._selectedId, false);
                 }
@@ -1001,8 +1100,7 @@ export class AutorecMenuApplication extends BaseApp {
                 const parsedSeq = this._workingSequence && this._workingSequence.length > 0
                     ? this._workingSequence
                     : (seqEl ? JSON.parse(seqEl.value) : [[['<ITEM_0>']]]);
-                const entryType = this._pendingType ?? (rawPattern.includes('::') ? 'override' : 'template');
-                await autorecManager.registerEntry({
+                const saved = await autorecManager.registerEntry({
                     id: this._selectedId,
                     name: nameEl.value.trim(),
                     type: entryType,
@@ -1010,6 +1108,7 @@ export class AutorecMenuApplication extends BaseApp {
                     sequence: parsedSeq,
                     enabled: true
                 });
+                this._selectedId = saved.id;
                 this._droppedActor = null;
                 this._pendingName = null;
                 this._pendingPattern = null;
