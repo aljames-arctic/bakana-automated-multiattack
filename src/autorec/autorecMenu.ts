@@ -343,9 +343,9 @@ export class AutorecMenuApplication extends BaseApp {
 
         const sidebarItemsHtml = `
             <div class="bam-sidebar-section">
-                <div class="bam-sidebar-section-header" style="padding: 8px 10px 6px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #818cf8; background: rgba(30, 36, 54, 0.85); border-bottom: 1px solid #334155; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 1;">
+                <div class="bam-sidebar-section-header" style="padding: 8px 10px 6px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #fbbf24; background: rgba(30, 36, 54, 0.85); border-bottom: 1px solid #334155; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 1;">
                     <span><i class="fas fa-scroll" style="margin-right: 6px;"></i> Templates</span>
-                    <span style="background: #312e81; color: #c7d2fe; padding: 1px 6px; border-radius: 10px; font-size: 0.68rem;">${templateEntries.length}</span>
+                    <span style="background: #78350f; color: #fde68a; padding: 1px 6px; border-radius: 10px; font-size: 0.68rem;">${templateEntries.length}</span>
                 </div>
                 ${templateEntries.length > 0
                     ? templateEntries.map(renderSidebarItem).join('')
