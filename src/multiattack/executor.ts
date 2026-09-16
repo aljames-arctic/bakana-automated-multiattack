@@ -6,8 +6,6 @@ import { autorecManager } from '../autorec/autorecManager.js';
 import { resolveActorItem } from './abstraction.js';
 import type { SelectOptionItem } from '../types/global.d.js';
 
-const _processedMessageIds = new Set<string>();
-
 /**
  * Removes the first occurrence of `item` from `arr`, returning a new array.
  */
@@ -202,33 +200,20 @@ export async function executeMultiattack(
 }
 
 /**
- * Registers Foundry VTT hooks for automatic Chat Card detection and button injection.
- * Eliminates the need for DIME / macro item triggers.
+ * Registers Foundry VTT and D&D 5e v4+ Activity hooks for automatic Multiattack execution
+ * upon feature usage (`dnd5e.postUseActivity`) and optional chat card button injection.
+ * Eliminates the need for DIME / macro item triggers or websocket chat card scraping.
  */
-export function registerMultiattackChatHooks(): void {
-    // 1. Automatic trigger on chat card creation
-    Hooks.on('createChatMessage', async (message: ChatMessage, _options: unknown, userId: string) => {
-        if (!adapter.isMultiattackMessage(message)) return;
-
-        // Only trigger on the client of the user who created the chat card
-        if (!adapter.isMessageAuthor(message, userId)) {
-            return;
-        }
-
-        const msgId = message.id;
-        if (msgId && _processedMessageIds.has(msgId)) return;
-        if (msgId) _processedMessageIds.add(msgId);
-
-        const autoTrigger = game.settings?.get(MODULE_ID, 'autoTriggerOnChatCard') !== false;
+export function registerMultiattackHooks(): void {
+    // 1. Automatic trigger on D&D 5e v4+ Activity usage (executes strictly on the initiating client)
+    adapter.registerItemUsageHook(async (actor: Actor, item: Item, token: Token | null) => {
+        const autoTrigger = game.settings?.get(MODULE_ID, 'autoTriggerOnUse') !== false;
         if (!autoTrigger) return;
 
-        const context = adapter.extractMultiattackContext(message);
-        if (!context) return;
-
-        await executeMultiattack(context.actor, context.item, context.token);
+        await executeMultiattack(actor, item, token);
     });
 
-    // 2. Inject interactive "Execute Multiattack" button into Multiattack chat cards
+    // 2. Inject interactive "Execute Multiattack" button into Multiattack chat cards for manual re-triggering
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const injectButton = (message: ChatMessage, html: any) => {
         if (!adapter.isMultiattackMessage(message)) return;
@@ -266,3 +251,6 @@ export function registerMultiattackChatHooks(): void {
     Hooks.on('renderChatMessageHTML', injectButton);
     Hooks.on('renderChatMessage', injectButton);
 }
+
+/** Alias for backwards compatibility */
+export const registerMultiattackChatHooks = registerMultiattackHooks;

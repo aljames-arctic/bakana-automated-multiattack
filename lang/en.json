@@ -46,9 +46,9 @@
         "label": "Import / Export JSON",
         "hint": "Import or export central multiattack autorecognition configurations as JSON."
       },
-      "autoTriggerOnChatCard": {
-        "name": "Auto-Trigger on Multiattack Chat Card",
-        "hint": "Automatically initiate the multiattack sequence when a Multiattack chat card is posted."
+      "autoTriggerOnUse": {
+        "name": "Auto-Trigger on Multiattack Activity Use",
+        "hint": "Automatically initiate the multiattack sequence via dnd5e.postUseActivity when a Multiattack feature is used."
       },
       "showChatCardButton": {
         "name": "Show Chat Card Execute Button",

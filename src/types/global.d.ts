@@ -38,7 +38,7 @@ export interface SelectOptionItem {
 declare global {
     interface SettingConfig {
         "bakana-automated-multiattack.autorecEntries": Record<string, AutorecEntry>;
-        "bakana-automated-multiattack.autoTriggerOnChatCard": boolean;
+        "bakana-automated-multiattack.autoTriggerOnUse": boolean;
         "bakana-automated-multiattack.showChatCardButton": boolean;
         "bakana-automated-multiattack.enableLlmFallback": boolean;
         "bakana-automated-multiattack.llmProvider": string;
@@ -48,6 +48,12 @@ declare global {
         "bakana-automated-multiattack.autoSelectSingleOption": boolean;
         "bakana-automated-multiattack.clearTargetsBetweenAttacks": boolean;
         "bakana-automated-multiattack.logVerbosity": string;
+    }
+
+    namespace HookConfig {
+        interface DeprecatedHookConfig {
+            "dnd5e.postUseActivity": (activity: unknown, usageConfig: unknown, results: unknown) => Promise<void> | void;
+        }
     }
 
     interface Window {

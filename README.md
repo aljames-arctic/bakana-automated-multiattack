@@ -25,9 +25,9 @@ Both creatures collapse into the **exact same canonical template** (`[[["<ITEM_0
 - All recognized templates and custom monster overrides (`Actor::Item`) are stored centrally in module settings (`autorecEntries`) and managed via the **Multiattack Autorecognition Menu** (`AutorecMenuApplication`) and **JSON Import/Export Menu** (`AutorecExchangeMenuApplication`).
 - Actors and items are never polluted with `flags.world['llm-multiattack']` documents.
 
-### 4. Zero-DIME Chat Card Activation & Custom Popup Select Menu
-- **Automatic Chat Card Trigger**: No DIME macro setup or item on-use macros required. When a Multiattack chat card is posted, the module automatically detects it and initiates the attack sequence exclusively for the user who created the chat card (`adapter.isMessageAuthor`).
-- **Interactive Chat Card Button**: Injects a sleek **⚡ Execute Multiattack** button onto Multiattack chat cards for manual or repeat execution.
+### 4. Native D&D 5e v4+ Activity Usage Hook & Custom Popup Select Menu
+- **Direct Activity Usage Trigger (`dnd5e.postUseActivity`)**: No DIME macro setup, item on-use scripts, or websocket chat card scraping required. When a Multiattack activity is used in D&D 5e v4+, the module hooks directly onto `dnd5e.postUseActivity` (via `adapter.registerItemUsageHook`), executing strictly on the local client that activated the feature with direct access to the concrete `Actor` and `Item` documents.
+- **Interactive Chat Card Button**: Also injects a sleek **⚡ Execute Multiattack** button onto Multiattack chat cards (`renderChatMessageHTML`) for manual or repeat execution.
 - **Native `item.use()` Execution & Custom Popup Select Menu**: Rolls each weapon/feature natively via `item.use()` so workflow modules like **Midi-QOL** hook into rolls naturally without brittle direct API dependencies, and presents choices via a built-in glassmorphism **Popup Select Dialog** (removing any dependency on `chrisPremades`).
 
 ### 5. Multi-Language Grammar Support via Foundry Localization (`localize()`)

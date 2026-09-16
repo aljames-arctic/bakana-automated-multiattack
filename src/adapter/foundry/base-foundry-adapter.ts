@@ -64,6 +64,15 @@ export class BaseFoundryAdapter {
     }
 
     /**
+     * Returns all currently controlled Token placeables on the active canvas.
+     * @returns {Token[]}
+     */
+    getControlledTokens(): Token[] {
+        if (!canvas?.ready || !canvas.tokens?.controlled) return [];
+        return canvas.tokens.controlled;
+    }
+
+    /**
      * Resolves the actor associated with a chat message speaker.
      * @param {ChatMessage|null|undefined} message Chat message document
      * @returns {Actor|null}

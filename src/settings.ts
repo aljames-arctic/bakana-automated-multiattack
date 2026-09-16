@@ -15,7 +15,7 @@ const SETTINGS_SECTIONS = deepFreeze([
         keys: [
             'autorecMenu',
             'autorecExchangeMenu',
-            'autoTriggerOnChatCard',
+            'autoTriggerOnUse',
             'showChatCardButton',
             'enableLlmFallback',
             'llmProvider',
@@ -115,9 +115,9 @@ export function registerModuleSettings(): void {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
 
-    game.settings.register(MODULE_ID, 'autoTriggerOnChatCard', {
-        name: 'BAM.settings.autoTriggerOnChatCard.name',
-        hint: 'BAM.settings.autoTriggerOnChatCard.hint',
+    game.settings.register(MODULE_ID, 'autoTriggerOnUse', {
+        name: 'BAM.settings.autoTriggerOnUse.name',
+        hint: 'BAM.settings.autoTriggerOnUse.hint',
         scope: 'world',
         config: true,
         type: Boolean,
