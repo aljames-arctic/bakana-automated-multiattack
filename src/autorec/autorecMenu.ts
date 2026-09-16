@@ -1,6 +1,6 @@
 import { autorecManager } from './autorecManager.js';
 import { adapter } from '../adapter/index.js';
-import { abstractMultiattackDescription } from '../multiattack/abstraction.js';
+import { abstractMultiattackDescription, hydrateMultiattackSequence } from '../multiattack/abstraction.js';
 import { parseMultiattackTemplate } from '../multiattack/parser.js';
 import { stripOrderPrefix } from '../multiattack/executor.js';
 import { localize } from '../lib/utils.js';
@@ -396,7 +396,14 @@ export class AutorecMenuApplication extends BaseApp {
                         ? `<input type="text" class="bam-pill-custom-input" data-sec="${sectionIdx}" data-flow="${flowIdx}" data-grp="${groupIdx}" value="${group.token}" placeholder="Weapon or any:A|B" style="width: 120px; padding: 1px 5px; background: #11141d; border: 1px solid #6366f1; color: #fff; border-radius: 3px; font-size: 0.78rem;" />`
                         : '';
 
+                    const connectorHtml = groupIdx > 0
+                        ? (group.strictOrder
+                            ? `<span class="bam-then-connector" style="background: rgba(251, 191, 36, 0.2); border: 1px solid #fbbf24; color: #fbbf24; font-weight: 700; font-size: 0.7rem; padding: 1px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px;" title="Must be rolled AFTER preceding attacks in this branch"><i class="fas fa-arrow-right"></i> THEN</span>`
+                            : `<span style="color:#64748b; font-weight:700;">+</span>`)
+                        : '';
+
                     return `
+                        ${connectorHtml}
                         <div class="bam-attack-pill">
                             <div class="bam-pill-stepper">
                                 <button type="button" class="bam-pill-btn bam-pill-dec" data-sec="${sectionIdx}" data-flow="${flowIdx}" data-grp="${groupIdx}" title="Decrease Count">&minus;</button>
@@ -407,7 +414,7 @@ export class AutorecMenuApplication extends BaseApp {
                                 ${optionsHtml}
                             </select>
                             ${customInputHtml}
-                            <button type="button" class="bam-pill-btn bam-pill-order" data-sec="${sectionIdx}" data-flow="${flowIdx}" data-grp="${groupIdx}" title="Toggle Strict Order vs Any Order" style="color: ${group.strictOrder ? '#fbbf24' : '#94a3b8'};">
+                            <button type="button" class="bam-pill-btn bam-pill-order" data-sec="${sectionIdx}" data-flow="${flowIdx}" data-grp="${groupIdx}" title="Toggle Strict Order ('THEN') vs Any Order ('+')" style="color: ${group.strictOrder ? '#fbbf24' : '#94a3b8'};">
                                 <i class="fas ${group.strictOrder ? 'fa-lock' : 'fa-random'}"></i>
                             </button>
                             <button type="button" class="bam-pill-btn bam-pill-del" data-sec="${sectionIdx}" data-flow="${flowIdx}" data-grp="${groupIdx}" title="Remove Attack" style="color: #f87171;">
@@ -415,7 +422,7 @@ export class AutorecMenuApplication extends BaseApp {
                             </button>
                         </div>
                     `;
-                }).join('<span style="color:#64748b; font-weight:700;">+</span>');
+                }).join('');
 
                 const orDivider = flowIdx > 0
                     ? `<div class="bam-or-divider">&mdash; OR (Alternative Combo) &mdash;</div>`
@@ -425,8 +432,11 @@ export class AutorecMenuApplication extends BaseApp {
                     ${orDivider}
                     <div class="bam-branch-row">
                         ${pillsHtml}
-                        <button type="button" class="bam-option-btn bam-add-pill-btn" data-sec="${sectionIdx}" data-flow="${flowIdx}" style="width: auto; padding: 3px 8px; font-size: 0.75rem;">
+                        <button type="button" class="bam-option-btn bam-add-pill-btn" data-sec="${sectionIdx}" data-flow="${flowIdx}" title="Add simultaneous/unordered attack to this branch (+)" style="width: auto; padding: 3px 8px; font-size: 0.75rem;">
                             <i class="fas fa-plus"></i> Attack
+                        </button>
+                        <button type="button" class="bam-option-btn bam-add-then-pill-btn" data-sec="${sectionIdx}" data-flow="${flowIdx}" title="Add sequential 'THEN' attack inside this branch (rolled after previous attacks in this branch)" style="width: auto; padding: 3px 8px; font-size: 0.75rem; border-color: #fbbf24; color: #fde68a;">
+                            <i class="fas fa-arrow-right"></i> + Then
                         </button>
                         ${displayFlows.length > 1 ? `
                             <button type="button" class="bam-pill-btn bam-del-branch-btn" data-sec="${sectionIdx}" data-flow="${flowIdx}" title="Remove this OR branch" style="margin-left: auto; color: #f87171;">
@@ -568,7 +578,12 @@ export class AutorecMenuApplication extends BaseApp {
                             <input type="text" id="bam-edit-name" value="${displayName}" style="width: 100%; padding: 6px 8px; background: #1e2436; border: 1px solid #4f46e5; color: #fff; border-radius: 4px;" />
                         </div>
                         <div style="display: flex; flex-direction: column; gap: 4px;">
-                            <label style="font-size: 0.78rem; color: #94a3b8;">Pattern / Key (Abstracted sentence or Actor::Item override)</label>
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                                <label style="font-size: 0.78rem; color: #94a3b8;">Pattern / Key (Abstracted sentence or Actor::Item override)</label>
+                                <button type="button" id="bam-parse-pattern-btn" class="bam-option-btn" title="Parse the sentence in Pattern / Key into the Visual Attack Sequence Builder below" style="width: auto; padding: 2px 8px; font-size: 0.72rem; border-color: #6366f1; color: #a5b4fc;">
+                                    <i class="fas fa-wand-magic-sparkles"></i> Auto-Build from Pattern Text
+                                </button>
+                            </div>
                             <input type="text" id="bam-edit-pattern" value="${displayPattern}" style="width: 100%; padding: 6px 8px; background: #1e2436; border: 1px solid #4f46e5; color: #fff; border-radius: 4px; font-family: monospace;" />
                         </div>
                     </div>
@@ -933,6 +948,54 @@ export class AutorecMenuApplication extends BaseApp {
             });
         });
 
+        // Auto-Build from Pattern Text button
+        root.querySelector('#bam-parse-pattern-btn')?.addEventListener('click', () => {
+            const patternEl = root.querySelector('#bam-edit-pattern') as HTMLInputElement | null;
+            const nameEl = root.querySelector('#bam-edit-name') as HTMLInputElement | null;
+            if (!patternEl || !patternEl.value.trim()) {
+                notify.warn('Enter a sentence in Pattern / Key first.');
+                return;
+            }
+            const rawText = patternEl.value.trim();
+            if (nameEl) this._pendingName = nameEl.value;
+
+            let templateToParse = rawText;
+            let itemMap: Record<string, string> = {};
+            if (!/<ITEM_\d+>/i.test(rawText)) {
+                const candidateMatches = Array.from(
+                    rawText.matchAll(/\b(?:with\s+(?:its|his|her|their)\s+|two\s+|three\s+|four\s+|one\s+)([\p{L}\s-]+?)(?=\s+attacks?\b|\s+then\b|,|\s+or\b|\.)/giu)
+                );
+                const mockItems = candidateMatches
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    .map((m) => ({ name: (m[1] ?? '').trim() } as any))
+                    .filter((i) => i.name.length > 1);
+                const abstracted = abstractMultiattackDescription(rawText, mockItems);
+                if (abstracted.template) {
+                    templateToParse = abstracted.template;
+                    itemMap = abstracted.itemMap;
+                }
+            }
+
+            const parsed = parseMultiattackTemplate(templateToParse);
+            if (!parsed) {
+                notify.warn('Could not automatically parse sentence. You can build it using + Attack, + Then, and + Add "OR" Alternative Branch below.');
+                return;
+            }
+
+            const currentSelf = autorecManager.getAllEntries().find((e) => e.id === this._selectedId);
+            const isOverride = this._pendingType === 'override' || currentSelf?.type === 'override' || rawText.includes('::');
+            if (isOverride && Object.keys(itemMap).length > 0) {
+                this._workingSequence = hydrateMultiattackSequence(parsed, itemMap);
+                this._pendingPattern = rawText;
+            } else {
+                this._workingSequence = parsed;
+                this._pendingPattern = templateToParse;
+            }
+            notify.info('Built visual attack sequence from pattern text!');
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (this as any).render?.();
+        });
+
         // Add Attack Pill to branch
         root.querySelectorAll('.bam-add-pill-btn').forEach((btn) => {
             btn.addEventListener('click', () => {
@@ -947,6 +1010,20 @@ export class AutorecMenuApplication extends BaseApp {
             });
         });
 
+        // Add sequential 'THEN' Attack Pill inside branch
+        root.querySelectorAll('.bam-add-then-pill-btn').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const sec = Number(btn.getAttribute('data-sec'));
+                const flow = Number(btn.getAttribute('data-flow'));
+                this._mutateFlowGroups(sec, flow, (groups) => {
+                    const nextIdx = groups.length;
+                    const nextToken = nextIdx < 4 ? `<ITEM_${nextIdx}>` : '<ITEM_0>';
+                    groups.push({ token: nextToken, count: 1, strictOrder: true });
+                    return groups;
+                });
+            });
+        });
+
         // Add OR branch to Step
         root.querySelectorAll('.bam-add-branch-btn').forEach((btn) => {
             btn.addEventListener('click', () => {
@@ -956,7 +1033,9 @@ export class AutorecMenuApplication extends BaseApp {
                 if (!section) return;
                 const hasOptionalExit = section.some((f) => f.length === 0);
                 const nonEmptyFlows = section.filter((f) => f.length > 0);
-                nonEmptyFlows.push(['<ITEM_0>']);
+                const usedCount = nonEmptyFlows.reduce((acc, f) => acc + groupFlowTokens(f).length, 0);
+                const nextToken = usedCount < 4 ? `<ITEM_${usedCount}>` : '<ITEM_0>';
+                nonEmptyFlows.push([nextToken]);
                 this._workingSequence[sec] = hasOptionalExit ? [...nonEmptyFlows, []] : nonEmptyFlows;
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 (this as any).render?.();
