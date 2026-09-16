@@ -92,3 +92,18 @@ test('resolveActorItem matches exact names, singular/plural variations, and stri
     assert.equal(resolveActorItem(mockActor, 'Morningstar Attack')?.name, 'Morningstar', 'Should strip " Attack" suffix');
     assert.equal(resolveActorItem(mockActor, 'Bites')?.name, 'Bite', 'Plural "Bites" should resolve singular "Bite" item');
 });
+
+test('abstractMultiattackDescription resolves D&D 5e v4+ 2024 MM enrichers ([[lookup @name lowercase]] and [[/item .mmArcaneBurst000]])', () => {
+    const archmageDesc = 'The [[lookup @name lowercase]]{monster} makes four [[/item .mmArcaneBurst000]] attacks.';
+    const archmageItems = createMockActorItems(['Multiattack', 'Arcane Burst']);
+
+    const abstracted = abstractMultiattackDescription(archmageDesc, archmageItems, 'Archmage');
+    assert.equal(
+        abstracted.template,
+        '<ACTOR> makes four <ITEM_0> attacks.',
+        'Should replace [[lookup @name]] with <ACTOR> and [[/item .mmArcaneBurst000]] with <ITEM_0>'
+    );
+    assert.deepEqual(abstracted.itemMap, {
+        '<ITEM_0>': 'Arcane Burst'
+    });
+});
