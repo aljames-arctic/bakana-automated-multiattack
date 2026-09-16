@@ -37,6 +37,22 @@ test('adapter.isMultiattackMessage detects Multiattack chat cards and ignores at
     assert.equal(adapter.isMultiattackMessage(attackRollCard), false, 'Should ignore attack roll cards');
 });
 
+test('adapter.isMessageAuthor returns true only for the user who created the chat card', () => {
+    const cardByCurrentUser = {
+        id: 'msg-author-1',
+        author: { id: 'user-gm' }
+    };
+    const cardByOtherUser = {
+        id: 'msg-author-2',
+        author: { id: 'user-player-2' }
+    };
+
+    assert.equal(adapter.isMessageAuthor(cardByCurrentUser), true, 'Should return true when message.author.id matches game.user.id');
+    assert.equal(adapter.isMessageAuthor(cardByOtherUser), false, 'Should return false when message was created by another user');
+    assert.equal(adapter.isMessageAuthor(cardByCurrentUser, 'user-player-2'), false, 'Hook userId parameter should take precedence');
+    assert.equal(adapter.isMessageAuthor(cardByOtherUser, 'user-gm'), true, 'Hook userId parameter matching game.user.id should return true');
+});
+
 test('executeMultiattack natively rolls items via item.use() without calling MidiQOL directly', async () => {
     await autorecManager.resetToDefaults(false);
 

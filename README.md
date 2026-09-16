@@ -26,7 +26,7 @@ Both creatures collapse into the **exact same canonical template** (`[[["<ITEM_0
 - Actors and items are never polluted with `flags.world['llm-multiattack']` documents.
 
 ### 4. Zero-DIME Chat Card Activation & Custom Popup Select Menu
-- **Automatic Chat Card Trigger**: No DIME macro setup or item on-use macros required. When a Multiattack chat card is posted, the module automatically detects it and initiates the attack sequence for the controlling user.
+- **Automatic Chat Card Trigger**: No DIME macro setup or item on-use macros required. When a Multiattack chat card is posted, the module automatically detects it and initiates the attack sequence exclusively for the user who created the chat card (`adapter.isMessageAuthor`).
 - **Interactive Chat Card Button**: Injects a sleek **⚡ Execute Multiattack** button onto Multiattack chat cards for manual or repeat execution.
 - **Native `item.use()` Execution & Custom Popup Select Menu**: Rolls each weapon/feature natively via `item.use()` so workflow modules like **Midi-QOL** hook into rolls naturally without brittle direct API dependencies, and presents choices via a built-in glassmorphism **Popup Select Dialog** (removing any dependency on `chrisPremades`).
 
