@@ -18,7 +18,7 @@ class Adapter {
         this.foundry = game?.release?.generation
             ? initializeFoundryAdapter()
             : new FoundryV13Adapter();
-        this.system = new BaseSystemAdapter('dnd5e', true, this.foundry);
+        this.system = initializeSystemAdapter(game?.system?.id ?? 'dnd5e', this.foundry);
     }
 
     init(): void {
@@ -49,6 +49,10 @@ class Adapter {
 
     extractMultiattackContext(message: ChatMessage): MultiattackContext | null {
         return this.system.extractMultiattackContext(message);
+    }
+
+    registerItemUsageHook(callback: (actor: Actor, item: Item, token: Token | null) => Promise<void> | void): void {
+        this.system.registerItemUsageHook(callback);
     }
 
     async useItem(item: Item, options: Record<string, unknown> = {}): Promise<unknown> {

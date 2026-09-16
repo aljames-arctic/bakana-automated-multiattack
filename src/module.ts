@@ -3,7 +3,7 @@ import { log } from './lib/logger.js';
 import { adapter } from './adapter/index.js';
 import { registerModuleSettings } from './settings.js';
 import { autorecManager } from './autorec/autorecManager.js';
-import { executeMultiattack, registerMultiattackChatHooks } from './multiattack/executor.js';
+import { executeMultiattack, registerMultiattackHooks, registerMultiattackChatHooks } from './multiattack/executor.js';
 import { abstractMultiattackDescription } from './multiattack/abstraction.js';
 import { parseMultiattackTemplate } from './multiattack/parser.js';
 
@@ -15,7 +15,7 @@ Hooks.once('init', () => {
 
 Hooks.once('ready', () => {
     autorecManager.loadSavedEntries();
-    registerMultiattackChatHooks();
+    registerMultiattackHooks();
 
     // Expose public API on window.bakanaMultiattack
     window.bakanaMultiattack = {

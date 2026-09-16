@@ -155,4 +155,12 @@ export class BaseSystemAdapter {
         }
         return 'other';
     }
+
+    /**
+     * Registers a system-specific hook that triggers when an Item/Activity is used on the local client.
+     * @param {(actor: Actor, item: Item, token: Token | null) => Promise<void> | void} _callback
+     */
+    registerItemUsageHook(_callback: (actor: Actor, item: Item, token: Token | null) => Promise<void> | void): void {
+        // Implemented by system adapter subclasses (e.g. Dnd5eSystemAdapter)
+    }
 }

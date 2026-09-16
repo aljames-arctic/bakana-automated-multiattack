@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import '../setup.js';
 import { adapter } from '../../src/adapter/index.js';
-import { executeMultiattack } from '../../src/multiattack/executor.js';
+import { executeMultiattack, registerMultiattackHooks } from '../../src/multiattack/executor.js';
 import { autorecManager } from '../../src/autorec/autorecManager.js';
 
 test('adapter.isMultiattackMessage detects Multiattack chat cards and ignores attack/damage rolls', () => {
@@ -103,6 +103,63 @@ test('executeMultiattack natively rolls items via item.use() without calling Mid
             rolledItems,
             ['Bite', 'Claws'],
             'Should natively roll Bite then Claws via item.use()'
+        );
+    } finally {
+        adapter.foundry.selectOptionDialog = origSelect;
+    }
+});
+
+test('registerMultiattackHooks automatically executes multiattack on dnd5e.postUseActivity (D&D 5e v4+)', async () => {
+    await autorecManager.resetToDefaults(false);
+    registerMultiattackHooks();
+
+    const rolledItems = [];
+    const biteItem = {
+        id: 'bite-id',
+        name: 'Bite',
+        use: async () => { rolledItems.push('Bite'); }
+    };
+    const clawsItem = {
+        id: 'claws-id',
+        name: 'Claws',
+        use: async () => { rolledItems.push('Claws'); }
+    };
+    const multiattackItem = {
+        id: 'ma-id',
+        name: 'Multiattack',
+        system: {
+            description: {
+                value: 'The bear makes two attacks: one with its bite and one with its claws.'
+            }
+        }
+    };
+    const bearActor = {
+        id: 'bear-id-activity',
+        name: 'Brown Bear',
+        items: new Map([
+            ['ma-id', multiattackItem],
+            ['bite-id', biteItem],
+            ['claws-id', clawsItem]
+        ])
+    };
+    multiattackItem.actor = bearActor;
+
+    const activity = {
+        id: 'act-ma',
+        name: 'Multiattack',
+        item: multiattackItem,
+        actor: bearActor
+    };
+
+    const origSelect = adapter.foundry.selectOptionDialog;
+    adapter.foundry.selectOptionDialog = async (options) => options[0]?.value ?? null;
+
+    try {
+        await globalThis.Hooks.callAll('dnd5e.postUseActivity', activity, {}, {});
+        assert.deepEqual(
+            rolledItems,
+            ['Bite', 'Claws'],
+            'Should automatically execute multiattack sequence when dnd5e.postUseActivity fires on client'
         );
     } finally {
         adapter.foundry.selectOptionDialog = origSelect;
