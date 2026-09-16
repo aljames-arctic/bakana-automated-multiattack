@@ -96,11 +96,13 @@ function parseQuantifiedItemList(phrase: string, grammar: LocalizedGrammar): str
 
     const meleeSorted = [...grammar.meleeKeywords].sort((a, b) => b.length - a.length).map((w) => escapeRegExp(w).replace(/\s+/g, '\\s+'));
     const rangedSorted = [...grammar.rangedKeywords].sort((a, b) => b.length - a.length).map((w) => escapeRegExp(w).replace(/\s+/g, '\\s+'));
+    const spellSorted = [...grammar.spellKeywords].sort((a, b) => b.length - a.length).map((w) => escapeRegExp(w).replace(/\s+/g, '\\s+'));
+    const anyAttackSorted = [...grammar.anyAttackKeywords].sort((a, b) => b.length - a.length).map((w) => escapeRegExp(w).replace(/\s+/g, '\\s+'));
 
     const hasExplicitItems = /<ITEM_\d+>/.test(phrase);
     const targetAlternatives = hasExplicitItems
         ? '<ITEM_\\d+>'
-        : [...meleeSorted, ...rangedSorted].join('|');
+        : [...meleeSorted, ...rangedSorted, ...spellSorted, ...anyAttackSorted].join('|');
 
     // Matches: (NumberWord) + up to 8 intervening words (prepositions/possessives/flavor text like "melee attacks with its", "attaques au corps à corps avec son") + (Target)
     const tokenRegex = new RegExp(
@@ -121,6 +123,10 @@ function parseQuantifiedItemList(phrase: string, grammar: LocalizedGrammar): str
             normalizedTarget = 'melee attack';
         } else if (grammar.rangedKeywords.some((k) => k.toLowerCase() === lowerTarget)) {
             normalizedTarget = 'ranged attack';
+        } else if (grammar.spellKeywords.some((k) => k.toLowerCase() === lowerTarget)) {
+            normalizedTarget = 'spell attack';
+        } else if (grammar.anyAttackKeywords.some((k) => k.toLowerCase() === lowerTarget)) {
+            normalizedTarget = 'any attack';
         }
 
         results.push(...repeatToken(normalizedTarget, qty));

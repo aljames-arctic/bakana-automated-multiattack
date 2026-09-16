@@ -6,6 +6,8 @@ export interface LocalizedGrammar {
     attackSuffixes: string[];
     meleeKeywords: string[];
     rangedKeywords: string[];
+    spellKeywords: string[];
+    anyAttackKeywords: string[];
     subjectArticles: string[];
     subjectPronouns: string[];
     possessiveKeywords: string[];
@@ -80,6 +82,8 @@ export function getLocalizedGrammar(): LocalizedGrammar {
     const attackSuffixes = getLocalizedList('BAM.grammar.attackSuffixes', 'attack, attacks');
     const meleeKeywords = getLocalizedList('BAM.grammar.meleeKeywords', 'melee attack, melee attacks');
     const rangedKeywords = getLocalizedList('BAM.grammar.rangedKeywords', 'ranged attack, ranged attacks');
+    const spellKeywords = getLocalizedList('BAM.grammar.spellKeywords', 'spell attack, spell attacks');
+    const anyAttackKeywords = getLocalizedList('BAM.grammar.anyAttackKeywords', 'any attack, any attacks');
     const subjectArticles = getLocalizedList('BAM.grammar.subjectArticles', 'the, this');
     const subjectPronouns = getLocalizedList('BAM.grammar.subjectPronouns', 'it, he, she, they');
     const possessiveKeywords = getLocalizedList('BAM.grammar.possessiveKeywords', 'its, his, her, their');
@@ -106,7 +110,7 @@ export function getLocalizedGrammar(): LocalizedGrammar {
     const thenPattern = buildAlternationPattern(thenDelimiters);
     const orPattern = buildAlternationPattern(orDelimiters);
     const numWordsPattern = buildAlternationPattern(Object.keys(numberWords));
-    const meleeRangedPattern = buildAlternationPattern([...meleeKeywords, ...rangedKeywords]);
+    const meleeRangedPattern = buildAlternationPattern([...meleeKeywords, ...rangedKeywords, ...spellKeywords, ...anyAttackKeywords]);
     const suffixesPattern = buildAlternationPattern(attackSuffixes);
 
     // Matches localized subject phrases (e.g. "The bear", "Der Bär", "Le capitaine") before localized action verbs
@@ -139,6 +143,8 @@ export function getLocalizedGrammar(): LocalizedGrammar {
         attackSuffixes,
         meleeKeywords,
         rangedKeywords,
+        spellKeywords,
+        anyAttackKeywords,
         subjectArticles,
         subjectPronouns,
         possessiveKeywords,

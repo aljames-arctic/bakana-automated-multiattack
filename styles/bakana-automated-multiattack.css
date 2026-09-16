@@ -232,3 +232,149 @@
     flex-direction: column;
     gap: 12px;
 }
+
+/* --- Visual Multiattack Flow Builder & Plain-English Summary --- */
+.bam-summary-banner {
+    background: linear-gradient(135deg, rgba(79, 70, 229, 0.18) 0%, rgba(30, 41, 59, 0.85) 100%);
+    border: 1px solid rgba(99, 102, 241, 0.4);
+    border-left: 4px solid #6366f1;
+    border-radius: 6px;
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.bam-summary-title {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #a5b4fc;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.bam-summary-body {
+    font-size: 0.88rem;
+    color: #f8fafc;
+    line-height: 1.45;
+}
+
+.bam-step-card {
+    background: rgba(20, 25, 38, 0.9);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.bam-step-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid rgba(99, 102, 241, 0.2);
+    padding-bottom: 8px;
+}
+
+.bam-step-badge {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #818cf8;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.bam-branch-row {
+    background: rgba(30, 38, 56, 0.75);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 6px;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.bam-or-divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin: 2px 0;
+    color: #94a3b8;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.bam-or-divider::before,
+.bam-or-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: rgba(99, 102, 241, 0.25);
+}
+
+.bam-attack-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(17, 20, 29, 0.95);
+    border: 1px solid rgba(99, 102, 241, 0.45);
+    border-radius: 6px;
+    padding: 3px 6px;
+    font-size: 0.82rem;
+    color: #f8fafc;
+}
+
+.bam-pill-stepper {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: rgba(99, 102, 241, 0.2);
+    border-radius: 4px;
+    padding: 1px 4px;
+    font-weight: 700;
+    color: #a5b4fc;
+}
+
+.bam-pill-btn {
+    background: transparent;
+    border: none;
+    color: #cbd5e1;
+    cursor: pointer;
+    padding: 1px 4px;
+    font-size: 0.8rem;
+    line-height: 1;
+    border-radius: 3px;
+}
+
+.bam-pill-btn:hover {
+    background: rgba(99, 102, 241, 0.35);
+    color: #ffffff;
+}
+
+.bam-pill-select {
+    background: #1e2436;
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    color: #ffffff;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 0.8rem;
+}
+
+.bam-autofill-panel {
+    background: rgba(15, 19, 30, 0.85);
+    border: 1px dashed rgba(99, 102, 241, 0.4);
+    border-radius: 6px;
+    padding: 8px 12px;
+}
+
