@@ -888,6 +888,7 @@ export class AutorecMenuApplication extends BaseApp {
         const deleteBtn = root.querySelector('#bam-delete-btn');
         deleteBtn?.addEventListener('click', async () => {
             if (!this._selectedId) return;
+            const deletedEntry = autorecManager.getAllEntries().find((e) => e.id === this._selectedId);
             await autorecManager.deleteEntry(this._selectedId);
             this._selectedId = null;
             this._workingSequence = null;
@@ -895,6 +896,9 @@ export class AutorecMenuApplication extends BaseApp {
             this._pendingName = null;
             this._pendingPattern = null;
             this._pendingType = null;
+            if (deletedEntry) {
+                notify.info(`Deleted Multiattack Autorec entry: "${deletedEntry.name}"`);
+            }
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (this as any).render?.();
         });

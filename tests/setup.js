@@ -113,8 +113,10 @@ globalThis.game = {
         format: (key) => key
     },
     settings: {
+        _configs: new Map(),
         register: (module, key, data) => {
             const fullKey = `${module}.${key}`;
+            globalThis.game.settings._configs.set(fullKey, data);
             if (!_settingsStore.has(fullKey)) {
                 _settingsStore.set(fullKey, data.default);
             }
@@ -129,6 +131,10 @@ globalThis.game = {
         set: async (module, key, value) => {
             const fullKey = `${module}.${key}`;
             _settingsStore.set(fullKey, value);
+            const cfg = globalThis.game.settings._configs.get(fullKey);
+            if (cfg?.onChange) {
+                cfg.onChange(value);
+            }
             return value;
         }
     },

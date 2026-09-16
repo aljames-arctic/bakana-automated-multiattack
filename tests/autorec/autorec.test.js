@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import '../setup.js';
 import { autorecManager } from '../../src/autorec/autorecManager.js';
+import { registerModuleSettings } from '../../src/settings.js';
 
 test('AutorecManager stores gathered multiattacks centrally and never calls setFlag on actors or items', async () => {
     await autorecManager.resetToDefaults(false);
@@ -60,3 +61,26 @@ test('AutorecManager stores gathered multiattacks centrally and never calls setF
     assert.equal(overrideResult.source, 'override');
     assert.deepEqual(overrideResult.sequence, [[['Tail Spike', 'Tail Spike', 'Tail Spike']]]);
 });
+
+test('deleteEntry permanently removes both default templates and custom entries without resurrection on settings onChange', async () => {
+    registerModuleSettings();
+    await autorecManager.resetToDefaults(true);
+
+    const initialCount = autorecManager.getAllEntries().length;
+    assert.ok(initialCount > 0, 'Should start with default templates');
+
+    const firstId = autorecManager.getAllEntries()[0]?.id;
+    assert.ok(firstId, 'First entry should have an id');
+
+    const deleted = await autorecManager.deleteEntry(firstId, true);
+    assert.equal(deleted, true, 'deleteEntry should return true');
+
+    const afterDelete = autorecManager.getAllEntries();
+    assert.equal(afterDelete.length, initialCount - 1, 'Entry count should decrease by 1');
+    assert.equal(
+        afterDelete.some((e) => e.id === firstId),
+        false,
+        'Deleted default template must not be resurrected by settings onChange'
+    );
+});
+

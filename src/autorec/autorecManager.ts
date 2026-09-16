@@ -158,16 +158,21 @@ export class AutorecManager {
     }
 
     /**
-     * Loads saved entries from Foundry world setting `autorecEntries`, merging with system defaults.
+     * Loads saved entries from Foundry world setting `autorecEntries`.
+     * Only falls back to seeding `SYSTEM_DEFAULT_TEMPLATES` if no saved setting object exists yet.
      * @param {Record<string, AutorecEntry> | AutorecEntry[]} [saved] Saved entries object or array
      */
     loadSavedEntries(saved?: Record<string, AutorecEntry> | AutorecEntry[]): void {
         this._entries.clear();
-        for (const def of SYSTEM_DEFAULT_TEMPLATES) {
-            this._entries.set(def.id, adapter.deepClone(def));
+
+        const rawSaved = saved ?? (game.settings?.get(MODULE_ID, 'autorecEntries') as Record<string, AutorecEntry> | undefined);
+        if (rawSaved === undefined || rawSaved === null) {
+            for (const def of SYSTEM_DEFAULT_TEMPLATES) {
+                this._entries.set(def.id, adapter.deepClone(def));
+            }
+            return;
         }
 
-        const rawSaved = saved ?? (game.settings?.get(MODULE_ID, 'autorecEntries') as Record<string, AutorecEntry> | undefined) ?? {};
         const list = Array.isArray(rawSaved) ? rawSaved : Object.values(rawSaved);
 
         for (const entry of list) {
