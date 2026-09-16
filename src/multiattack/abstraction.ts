@@ -1,18 +1,28 @@
+import { getLocalizedGrammar, escapeRegExp, isLocalizedMultiattackName, type LocalizedGrammar } from './grammar.js';
 import type { AbstractedMultiattack, MultiattackSequence } from '../types/global.d.js';
 
 /**
- * Generates surface form variations for an item name to match inside natural language descriptions.
+ * Generates surface form variations for an item name to match inside natural language descriptions,
+ * respecting localized attack suffixes (e.g., "attack", "angriff", "attaque").
  * @param {string} rawName Item name from Actor sheet
+ * @param {LocalizedGrammar} [grammar] Optional pre-resolved localized grammar
  * @returns {string[]} Array of lowercase surface forms sorted longest-first
  */
-export function getItemSurfaceForms(rawName: string): string[] {
+export function getItemSurfaceForms(rawName: string, grammar: LocalizedGrammar = getLocalizedGrammar()): string[] {
     const clean = rawName.trim().toLowerCase();
-    if (!clean || clean === 'multiattack') return [];
+    if (!clean || isLocalizedMultiattackName(clean)) return [];
 
     const forms = new Set<string>();
     forms.add(clean);
 
-    const withoutAttack = clean.replace(/\s+attacks?$/, '').trim();
+    // Build suffix removal pattern from localized attackSuffixes
+    const suffixAlternation = grammar.attackSuffixes
+        .map((s) => escapeRegExp(s.toLowerCase()))
+        .sort((a, b) => b.length - a.length)
+        .join('|');
+    const suffixRegex = suffixAlternation ? new RegExp(`[\\s-]+(?:${suffixAlternation})$`, 'i') : null;
+
+    const withoutAttack = suffixRegex ? clean.replace(suffixRegex, '').trim() : clean;
     if (withoutAttack) {
         forms.add(withoutAttack);
         if (withoutAttack.endsWith('ies')) {
@@ -20,11 +30,17 @@ export function getItemSurfaceForms(rawName: string): string[] {
         } else if (withoutAttack.endsWith('es') && withoutAttack.length > 3) {
             forms.add(withoutAttack.slice(0, -2));
             forms.add(withoutAttack.slice(0, -1));
+        } else if (withoutAttack.endsWith('en') && withoutAttack.length > 3) {
+            // German plural handling (e.g. "Klauen" -> "Klaue")
+            forms.add(withoutAttack.slice(0, -1));
+            forms.add(withoutAttack.slice(0, -2));
         } else if (withoutAttack.endsWith('s') && withoutAttack.length > 2) {
             forms.add(withoutAttack.slice(0, -1));
         } else {
             forms.add(withoutAttack + 's');
             forms.add(withoutAttack + 'es');
+            forms.add(withoutAttack + 'en');
+            forms.add(withoutAttack + 'n');
         }
     }
 
@@ -32,21 +48,9 @@ export function getItemSurfaceForms(rawName: string): string[] {
 }
 
 /**
- * Escapes special characters in a string for use in a RegExp.
- * @param {string} str Input string
- * @returns {string} Escaped regex string
- */
-function escapeRegExp(str: string): string {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/**
- * Abstracts a D&D Multiattack natural language description by replacing creature subject references
- * with `<ACTOR>` and actor item/weapon names with ordered `<ITEM_0>`, `<ITEM_1>`, etc. placeholders.
- *
- * Numbering `<ITEM_N>` by order of first appearance in the description guarantees that monsters
- * with identical sentence structures (e.g. Brown Bear and Owlbear) collapse into the exact same
- * canonical template regardless of item inventory order.
+ * Abstracts a Multiattack natural language description in any localized language (`localize('BAM.grammar.*')`)
+ * by replacing creature subject references with `<ACTOR>` and actor item/weapon names with ordered
+ * `<ITEM_0>`, `<ITEM_1>`, etc. placeholders.
  *
  * @param {string} description Raw or cleaned Multiattack description text
  * @param {Item[]} actorItems Array of Item documents belonging to the actor
@@ -62,6 +66,8 @@ export function abstractMultiattackDescription(
         return { template: '', itemMap: {}, reverseMap: {} };
     }
 
+    const grammar = getLocalizedGrammar();
+
     // 1. Clean HTML and normalize whitespace
     let text = description
         .replace(/<[^>]*>/g, ' ')
@@ -72,38 +78,41 @@ export function abstractMultiattackDescription(
         .replace(/\s+/g, ' ')
         .trim();
 
+    const articlesAlternation = grammar.subjectArticles
+        .map((a) => escapeRegExp(a))
+        .sort((a, b) => b.length - a.length)
+        .join('|');
+
     // 2. Replace explicit actor name if provided
     if (actorName && actorName.trim().length > 1) {
         const cleanActor = actorName.trim();
         const escapedActor = escapeRegExp(cleanActor);
-        text = text.replace(new RegExp(`\\b(?:the\\s+)?${escapedActor}\\b`, 'gi'), '<ACTOR>');
+        const articlePrefix = articlesAlternation ? `(?:(?:${articlesAlternation})\\s+)?` : '(?:the\\s+)?';
+        text = text.replace(new RegExp(`\\b${articlePrefix}${escapedActor}\\b`, 'giu'), '<ACTOR>');
 
-        // Also handle last word of multi-word actor names (e.g., "Adult Red Dragon" -> "the dragon", "Bandit Captain" -> "the captain")
+        // Also handle last word of multi-word actor names (e.g., "Adult Red Dragon" -> "the dragon", "Roter Drache" -> "der Drache")
         const words = cleanActor.split(/\s+/);
         if (words.length > 1) {
             const lastWord = words[words.length - 1];
             if (lastWord && lastWord.length > 2) {
-                text = text.replace(new RegExp(`\\bthe\\s+${escapeRegExp(lastWord)}\\b`, 'gi'), '<ACTOR>');
+                text = text.replace(new RegExp(`\\b(?:${articlesAlternation})\\s+${escapeRegExp(lastWord)}\\b`, 'giu'), '<ACTOR>');
             }
         }
     }
 
-    // 3. Replace generic creature subject phrases before action verbs (e.g. "The bear makes", "The owlbear can use", "Or the captain makes")
-    text = text.replace(
-        /\b(?:the|this)\s+[a-z-]+(?:\s+[a-z-]+)?(?=\s+(?:makes|can\s+use|uses|attacks|casts|has|also\s+makes)\b)/gi,
-        '<ACTOR>'
-    );
+    // 3. Replace localized creature subject phrases before localized action verbs (e.g., "The bear makes", "Der Bär führt", "Le capitaine effectue")
+    text = text.replace(grammar.actorSubjectRegex, '<ACTOR>');
 
-    // Normalize "It then" or "he/she then" after a period to "<ACTOR> then" for uniform sectioning
-    text = text.replace(/([.!?]\s+)(?:it|he|she|they)\s+then\b/gi, '$1<ACTOR> then');
+    // Normalize localized pronoun + "then" after sentence boundaries to "<ACTOR> <thenDelimiter>"
+    const primaryThen = grammar.thenDelimiters[0] ?? 'then';
+    text = text.replace(grammar.pronounThenRegex, `$1<ACTOR> ${primaryThen}`);
 
-    // 4. Identify candidate items on the actor (excluding Multiattack itself)
+    // 4. Identify candidate items on the actor (excluding Multiattack / Mehrfachangriff / etc.)
     const validItems = (actorItems ?? []).filter((item: Item) => {
-        const name = item?.name?.trim().toLowerCase();
-        return Boolean(name && name !== 'multiattack');
+        const name = item?.name?.trim();
+        return Boolean(name && !isLocalizedMultiattackName(name));
     });
 
-    // Build all candidate surface forms mapped to their canonical Item name
     interface MatchCandidate {
         canonicalName: string;
         form: string;
@@ -113,17 +122,16 @@ export function abstractMultiattackDescription(
     const candidates: MatchCandidate[] = [];
     for (const item of validItems) {
         const canonicalName = item.name.trim();
-        const forms = getItemSurfaceForms(canonicalName);
+        const forms = getItemSurfaceForms(canonicalName, grammar);
         for (const form of forms) {
             candidates.push({
                 canonicalName,
                 form,
-                regex: new RegExp(`\\b${escapeRegExp(form)}\\b`, 'i')
+                regex: new RegExp(`\\b${escapeRegExp(form)}\\b`, 'iu')
             });
         }
     }
 
-    // Sort candidates by surface form length descending so multi-word items ("Frightful Presence", "Heavy Crossbow") match before substrings
     candidates.sort((a, b) => b.form.length - a.form.length);
 
     // Find first appearance index in `text` for each distinct canonical item
@@ -158,12 +166,10 @@ export function abstractMultiattackDescription(
     for (const cand of candidates) {
         const placeholder = canonicalToPlaceholder.get(cand.canonicalName);
         if (!placeholder) continue;
-        const globalRegex = new RegExp(`\\b${escapeRegExp(cand.form)}\\b`, 'gi');
+        const globalRegex = new RegExp(`\\b${escapeRegExp(cand.form)}\\b`, 'giu');
         text = text.replace(globalRegex, placeholder);
     }
 
-    // Clean up any accidental double placeholders or trailing "attack(s)" after placeholder when appropriate
-    // e.g., if an item was named "Longsword Attack" and replaced "Longsword Attack", ensure we don't have "<ITEM_0> attack" vs "<ITEM_0>" inconsistency
     text = text.replace(/\s+/g, ' ').trim();
 
     return {
@@ -197,7 +203,7 @@ export function hydrateMultiattackSequence(
 
 /**
  * Resolves a concrete Item document on an Actor from an attack selection string.
- * Supports exact matching, plural/singular variations (`Claw` <-> `Claws`), and stripping `" Attack"`.
+ * Supports exact matching, plural/singular variations, and stripping localized attack suffixes.
  * @param {Actor} actor Concrete Actor document
  * @param {string} selection Selected attack or item name
  * @returns {Item | null}
@@ -206,33 +212,28 @@ export function resolveActorItem(actor: Actor, selection: string): Item | null {
     if (!actor?.items || !selection) return null;
     const clean = selection.trim().toLowerCase();
     const items = Array.from(actor.items.values()) as Item[];
+    const grammar = getLocalizedGrammar();
 
-    // 1. Exact case-insensitive match
-    let found = items.find((i: Item) => i.name.trim().toLowerCase() === clean);
-    if (found) return found;
+    const suffixAlternation = grammar.attackSuffixes
+        .map((s) => escapeRegExp(s.toLowerCase()))
+        .sort((a, b) => b.length - a.length)
+        .join('|');
+    const suffixRegex = suffixAlternation ? new RegExp(`[\\s-]+(?:${suffixAlternation})$`, 'i') : null;
+    const stripped = suffixRegex ? clean.replace(suffixRegex, '').trim() : clean;
 
-    // 2. Match with added 's' or 'es' (e.g. "Claw" -> "Claws")
-    found = items.find((i: Item) => {
-        const itemName = i.name.trim().toLowerCase();
-        return itemName === clean + 's' || itemName === clean + 'es';
+    // 1. Exact case-insensitive match (raw or suffix-stripped)
+    let found = items.find((i: Item) => {
+        const nameLower = i.name.trim().toLowerCase();
+        return nameLower === clean || (stripped && nameLower === stripped);
     });
     if (found) return found;
 
-    // 3. Match with trailing 's' stripped (e.g. "Claws" -> "Claw")
-    if (clean.endsWith('s')) {
-        const singular = clean.slice(0, -1);
-        found = items.find((i: Item) => i.name.trim().toLowerCase() === singular);
-        if (found) return found;
-    }
-
-    // 4. Match without trailing " attack" (e.g. "Morningstar Attack" -> "Morningstar")
-    const withoutAttack = clean.replace(/\s+attacks?$/, '').trim();
-    if (withoutAttack !== clean) {
-        found = items.find((i: Item) => {
-            const itemName = i.name.trim().toLowerCase();
-            return itemName === withoutAttack || itemName === withoutAttack + 's';
-        });
-        if (found) return found;
+    // 2. Match using surface forms generated for each actor item
+    for (const item of items) {
+        const forms = getItemSurfaceForms(item.name, grammar);
+        if (forms.includes(clean) || (stripped && forms.includes(stripped))) {
+            return item;
+        }
     }
 
     return null;

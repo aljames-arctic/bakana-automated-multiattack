@@ -1,0 +1,34 @@
+{
+  "BAM": {
+    "title": "Bakana's Automatisierter Mehrfachangriff",
+    "grammar": {
+      "multiattackNames": "Mehrfachangriff, Multiattack",
+      "meleeKeywords": "Nahkampfangriff, Nahkampfangriffe",
+      "rangedKeywords": "Fernkampfangriff, Fernkampfangriffe",
+      "attackSuffixes": "angriff, angriffe",
+      "subjectArticles": "der, die, das",
+      "subjectPronouns": "er, sie, es",
+      "possessiveKeywords": "seinem, seinen, seiner, sein, ihrem, ihren, ihrer, ihr",
+      "actionVerbs": "führt, kann, setzt, greift, hat, macht",
+      "thenDelimiters": "danach, anschließend",
+      "orDelimiters": "oder",
+      "canUseKeywords": "kann einsetzen, setzt ein, kann nutzen, nutzt, kann",
+      "replaceKeywords": "kann ersetzen, ersetzt",
+      "replaceWithKeywords": "durch, mit",
+      "conditionIfKeywords": "wenn, falls",
+      "bonusAlsoKeywords": "kann außerdem, kann auch",
+      "numbers": {
+        "1": "ein, eine, einen, einem, eins",
+        "2": "zwei",
+        "3": "drei",
+        "4": "vier",
+        "5": "fünf, fuenf",
+        "6": "sechs",
+        "7": "sieben",
+        "8": "acht",
+        "9": "neun",
+        "10": "zehn"
+      }
+    }
+  }
+}

@@ -1,4 +1,5 @@
 import { BaseFoundryAdapter } from '../foundry/base-foundry-adapter.js';
+import { isLocalizedMultiattackName } from '../../multiattack/grammar.js';
 import { log } from '../../lib/logger.js';
 
 export interface MultiattackContext {
@@ -84,20 +85,18 @@ export class BaseSystemAdapter {
             item = actor.items.get(flagItemId) ?? null;
         }
 
-        // 2. Try matching by item name in flavor or content if item ID wasn't in flags
+        // 2. Try matching by localized multiattack item name in flavor or content if item ID wasn't in flags
         if (!item && actor.items) {
-            const flavor = String(message.flavor ?? '').toLowerCase();
-            const content = String(message.content ?? '').toLowerCase();
-            if (flavor.includes('multiattack') || content.includes('multiattack')) {
+            const flavor = String(message.flavor ?? '');
+            const content = String(message.content ?? '');
+            if (isLocalizedMultiattackName(flavor) || isLocalizedMultiattackName(content)) {
                 const items = Array.from(actor.items.values()) as Item[];
-                item = items.find((i: Item) => i.name.trim().toLowerCase() === 'multiattack')
-                    ?? items.find((i: Item) => i.name.toLowerCase().includes('multiattack'))
-                    ?? null;
+                item = items.find((i: Item) => isLocalizedMultiattackName(i.name)) ?? null;
             }
         }
 
         if (!item) return null;
-        if (!item.name.toLowerCase().includes('multiattack')) return null;
+        if (!isLocalizedMultiattackName(item.name)) return null;
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const rawDesc = (item as any).system?.description?.value ?? '';
