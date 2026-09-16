@@ -96,6 +96,25 @@ export class AutorecMenuApplication extends BaseApp {
         return container;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    _replaceHTML(result: HTMLElement, content: HTMLElement, _options: any): void {
+        const wasSearchFocused = document.activeElement?.id === 'bam-search-input';
+        const selectionStart = (document.activeElement as HTMLInputElement | null)?.selectionStart ?? null;
+        const selectionEnd = (document.activeElement as HTMLInputElement | null)?.selectionEnd ?? null;
+
+        content.replaceChildren(result);
+
+        if (wasSearchFocused) {
+            const newSearch = content.querySelector('#bam-search-input') as HTMLInputElement | null;
+            if (newSearch) {
+                newSearch.focus();
+                if (selectionStart !== null && selectionEnd !== null) {
+                    newSearch.setSelectionRange(selectionStart, selectionEnd);
+                }
+            }
+        }
+    }
+
     private _attachListeners(root: HTMLElement): void {
         const searchInput = root.querySelector('#bam-search-input') as HTMLInputElement | null;
         searchInput?.addEventListener('input', (ev) => {

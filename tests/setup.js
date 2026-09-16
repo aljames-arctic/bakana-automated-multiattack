@@ -42,7 +42,36 @@ globalThis.CONST = {
 globalThis.foundry = {
     applications: {
         api: {
-            ApplicationV2: class {},
+            ApplicationV2: class ApplicationV2 {
+                _renderHTML() {
+                    throw new Error(`The ${this.constructor.name} Application class is not renderable because it does not implement the abstract methods _renderHTML and _replaceHTML.`);
+                }
+                _replaceHTML() {
+                    throw new Error(`The ${this.constructor.name} Application class is not renderable because it does not implement the abstract methods _renderHTML and _replaceHTML.`);
+                }
+                async render(options = {}) {
+                    if (
+                        this._renderHTML === ApplicationV2.prototype._renderHTML ||
+                        this._replaceHTML === ApplicationV2.prototype._replaceHTML
+                    ) {
+                        throw new Error(
+                            `The ${this.constructor.name} Application class is not renderable because it does not implement the abstract methods _renderHTML and _replaceHTML.`
+                        );
+                    }
+                    const result = await this._renderHTML({}, options);
+                    const content = {
+                        children: [],
+                        replaceChildren(...nodes) {
+                            this.children = nodes;
+                        },
+                        querySelector() {
+                            return null;
+                        }
+                    };
+                    this._replaceHTML(result, content, options);
+                    return this;
+                }
+            },
             DialogV2: {
                 wait: async (config) => {
                     if (globalThis.__mockDialogSelectHandler) {
