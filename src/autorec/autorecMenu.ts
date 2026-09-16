@@ -17,10 +17,10 @@ export interface GroupedAttackPill {
 }
 
 const STANDARD_TOKEN_CHOICES: Array<{ value: string; label: string }> = [
-    { value: '<ITEM_0>', label: '1st Mentioned Item (<ITEM_0>)' },
-    { value: '<ITEM_1>', label: '2nd Mentioned Item (<ITEM_1>)' },
-    { value: '<ITEM_2>', label: '3rd Mentioned Item (<ITEM_2>)' },
-    { value: '<ITEM_3>', label: '4th Mentioned Item (<ITEM_3>)' },
+    { value: '<ITEM_0>', label: 'Item #1' },
+    { value: '<ITEM_1>', label: 'Item #2' },
+    { value: '<ITEM_2>', label: 'Item #3' },
+    { value: '<ITEM_3>', label: 'Item #4' },
     { value: 'melee attack', label: 'Any Melee Attack' },
     { value: 'ranged attack', label: 'Any Ranged Attack' },
     { value: 'spell attack', label: 'Any Spell Attack' },
@@ -37,9 +37,7 @@ export function formatTokenHumanLabel(rawToken: string): string {
     const itemMatch = /^<item_(\d+)>$/i.exec(clean);
     if (itemMatch && itemMatch[1]) {
         const idx = parseInt(itemMatch[1], 10);
-        const ordinals = ['1st', '2nd', '3rd', '4th', '5th', '6th'];
-        const ord = ordinals[idx] ?? `${idx + 1}th`;
-        return `${ord} Item (${clean.toUpperCase()})`;
+        return `Item #${idx + 1}`;
     }
     if (lower === 'melee attack') return 'Any Melee Attack';
     if (lower === 'ranged attack') return 'Any Ranged Attack';
@@ -404,12 +402,12 @@ export class AutorecMenuApplication extends BaseApp {
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
                         <span style="font-size: 0.74rem; color: #94a3b8;">Detected Weapons:</span>
                         ${Object.entries(this._droppedActor.itemMap).map(([k, v]) => `
-                            <span class="bam-weapon-mapping-pill"><b style="color:#a5b4fc;">${k}</b> &rarr; ${v}</span>
+                            <span class="bam-weapon-mapping-pill"><b style="color:#a5b4fc;">${formatTokenHumanLabel(k)}</b> &rarr; ${v}</span>
                         `).join('')}
                     </div>
                     <div style="display: flex; gap: 6px;">
                         <button type="button" id="bam-drop-mode-template" class="bam-option-btn" style="width: auto; padding: 3px 10px; font-size: 0.74rem; ${this._droppedActor.mode === 'template' ? 'border-color: #818cf8; background: rgba(99, 102, 241, 0.35); font-weight: 700;' : ''}">
-                            <i class="fas fa-shapes"></i> Reusable Template (&lt;ITEM_N&gt;)
+                            <i class="fas fa-shapes"></i> Reusable Template
                         </button>
                         <button type="button" id="bam-drop-mode-override" class="bam-option-btn" style="width: auto; padding: 3px 10px; font-size: 0.74rem; ${this._droppedActor.mode === 'override' ? 'border-color: #818cf8; background: rgba(99, 102, 241, 0.35); font-weight: 700;' : ''}">
                             <i class="fas fa-user-tag"></i> Specific Monster Override

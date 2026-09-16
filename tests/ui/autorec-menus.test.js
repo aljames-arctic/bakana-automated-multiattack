@@ -52,7 +52,7 @@ import { adapter } from '../../src/adapter/index.js';
 
 test('Visual flow builder helpers format, group, expand, and summarize 3D attack sequences into human-readable English', () => {
     // Token formatting
-    assert.equal(formatTokenHumanLabel('<ITEM_0>'), '1st Item (<ITEM_0>)');
+    assert.equal(formatTokenHumanLabel('<ITEM_0>'), 'Item #1');
     assert.equal(formatTokenHumanLabel('>Gore'), 'Gore');
     assert.equal(formatTokenHumanLabel('any:Slash|Pierce'), 'Any of [Slash, Pierce]');
 
@@ -73,8 +73,8 @@ test('Visual flow builder helpers format, group, expand, and summarize 3D attack
     const summary = summarizeSequenceInPlainEnglish(dragonSeq);
     assert.ok(summary.includes('Step 1:'), 'Summary should include Step 1 header');
     assert.ok(summary.includes('Then Step 2:'), 'Summary should include Step 2 header');
-    assert.ok(summary.includes('1&times; 1st Item (<ITEM_0>)'), 'Summary should include 1st item count');
-    assert.ok(summary.includes('2&times; 3rd Item (<ITEM_2>)'), 'Summary should include 3rd item count');
+    assert.ok(summary.includes('1&times; Item #1'), 'Summary should include Item #1 count');
+    assert.ok(summary.includes('2&times; Item #3'), 'Summary should include Item #3 count');
 });
 
 test('Drag & Drop Actor auto-fill resolves Actor from drop payload and extracts template and override sequences', async () => {
