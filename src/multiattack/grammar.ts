@@ -133,7 +133,7 @@ export function getLocalizedGrammar(): LocalizedGrammar {
 
     // Splits alternative "or" branches
     const orDelimiterRegex = new RegExp(
-        `(?:[.!?]\\s+${orPattern}\\b|\\b${orPattern}\\s+<ACTOR>|\\b${orPattern}\\s+(?=(?:${numWordsPattern}|\\d+)\\s+(?:<ITEM_\\d+>|${meleeRangedPattern}|${suffixesPattern})))`,
+        `(?:[.!?]\\s+${orPattern}\\b|,\\s*${orPattern}\\b|\\b${orPattern}\\s+(?:<ACTOR>|${pronounsPattern}|${verbsPattern})\\b|\\b${orPattern}\\s+(?=(?:${numWordsPattern}|\\d+)\\s+(?:<ITEM_\\d+>|${meleeRangedPattern}|${suffixesPattern})))`,
         'iu'
     );
 

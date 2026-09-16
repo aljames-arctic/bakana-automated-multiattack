@@ -34,10 +34,9 @@ function repeatToken(token: string, count: number): string[] {
 }
 
 /**
- * Extracts quantified `<ITEM_N>` or generic melee/ranged attack tokens from a single clause
- * using localized number words and keywords from `grammar`.
+ * Extracts quantified `<ITEM_N>` or generic melee/ranged attack tokens from an atomic clause (no 'then' transitions).
  */
-function parseSingleClauseItems(clause: string, grammar: LocalizedGrammar): string[] {
+function parseAtomicClauseItems(clause: string, grammar: LocalizedGrammar): string[] {
     const clean = clause.trim();
     if (!clean) return [];
 
@@ -77,6 +76,39 @@ function parseSingleClauseItems(clause: string, grammar: LocalizedGrammar): stri
     }
 
     return [];
+}
+
+/**
+ * Extracts quantified `<ITEM_N>` or generic melee/ranged attack tokens from a single clause
+ * using localized number words and keywords from `grammar`.
+ * If the clause contains an intra-clause "then" transition (e.g. "three attacks with <ITEM_0> then one with <ITEM_1>"),
+ * items after "then" are automatically prefixed with `>` to enforce strict ordering within that flow.
+ */
+function parseSingleClauseItems(clause: string, grammar: LocalizedGrammar): string[] {
+    const clean = clause.trim();
+    if (!clean) return [];
+
+    const thenPattern = grammar.thenDelimiters.map((w) => escapeRegExp(w)).join('|');
+    if (thenPattern) {
+        const intraThenRegex = new RegExp(`\\b(?:and\\s+|und\\s+|et\\s+)?(?:${thenPattern})\\b`, 'iu');
+        if (intraThenRegex.test(clean)) {
+            const subClauses = clean.split(intraThenRegex).map((s) => s.trim()).filter(Boolean);
+            if (subClauses.length > 1) {
+                const combined: string[] = [];
+                subClauses.forEach((sub, idx) => {
+                    const subItems = parseAtomicClauseItems(sub, grammar);
+                    for (const item of subItems) {
+                        combined.push(idx > 0 && !item.startsWith('>') ? `>${item}` : item);
+                    }
+                });
+                if (combined.length > 0) {
+                    return combined;
+                }
+            }
+        }
+    }
+
+    return parseAtomicClauseItems(clean, grammar);
 }
 
 /**
@@ -285,11 +317,19 @@ export function parseMultiattackTemplate(template: string): MultiattackSequence 
 
     const grammar = getLocalizedGrammar();
 
-    // Split template into sections by localized "then" transitions
-    const rawSections = template
-        .split(grammar.thenDelimiterRegex)
-        .map((s) => s.trim())
-        .filter(Boolean);
+    const thenPattern = grammar.thenDelimiters.map((w) => escapeRegExp(w)).join('|');
+    const sentenceBoundaryThenRegex = new RegExp(
+        `[.!?]\\s*(?:<ACTOR>|[\\p{L}]+)?\\s*(?:[\\p{L}\\s]+?\\s+)?\\b(?:${thenPattern})\\b`,
+        'iu'
+    );
+
+    // If the template contains an 'or' branch without a sentence-boundary 'then' break,
+    // treat as a single section so intra-branch 'then' transitions are handled inside each OR branch.
+    const shouldSplitTopLevelThen = sentenceBoundaryThenRegex.test(template) || !grammar.orDelimiterRegex.test(template);
+
+    const rawSections = shouldSplitTopLevelThen
+        ? template.split(grammar.thenDelimiterRegex).map((s) => s.trim()).filter(Boolean)
+        : [template.trim()];
 
     const result: MultiattackSequence = [];
     for (const rawSection of rawSections) {
