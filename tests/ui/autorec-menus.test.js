@@ -129,24 +129,18 @@ test('Drag & Drop Actor auto-fill resolves Actor from drop payload and extracts 
     }
 });
 
-test('handleActorDrop detects existing matching pattern, switches selection to existing entry, and deletes temporary unfilled template', async () => {
+test('Dropping a monster whose general template exists defaults to Monster Override so Two Identical Weapon Attacks is never overwritten', async () => {
     await autorecManager.resetToDefaults(false);
     const origDoc = globalThis.document;
     globalThis.document = createMockDOM();
 
-    // First register a known pattern
-    const existingEntry = await autorecManager.registerEntry({
-        id: 'existing-archmage-pattern',
-        name: 'Four Attacks Template',
-        type: 'template',
-        pattern: 'the <actor> makes four <item_0> attacks.',
-        sequence: [[['<ITEM_0>', '<ITEM_0>', '<ITEM_0>', '<ITEM_0>']]],
-        enabled: true
-    }, false);
+    // Verify Two Identical Weapon Attacks exists in Templates
+    const twoSameTemplate = autorecManager.findDuplicatePattern('<ACTOR> makes two <ITEM_0> attacks.', undefined, 'template');
+    assert.ok(twoSameTemplate, 'Should start with Two Identical Weapon Attacks template');
 
     // Create a temporary unfilled template like "+ Add Template" does
     const tempUnfilled = await autorecManager.registerEntry({
-        id: 'temp-unfilled-drop',
+        id: 'temp-unfilled-ghost',
         name: 'New Template',
         type: 'template',
         pattern: '',
@@ -154,24 +148,24 @@ test('handleActorDrop detects existing matching pattern, switches selection to e
         enabled: true
     }, false);
 
-    const archmageActor = {
-        id: 'archmage-dup',
-        name: 'Archmage',
-        img: 'icons/creatures/magical/humanoid-silhouette-glowing-pink.webp',
+    const ghostActor = {
+        id: 'ghost-actor',
+        name: 'Ghost',
+        img: 'icons/creatures/undead/ghost-screaming-white.webp',
         items: new Map([
             ['ma-item', {
                 id: 'ma-item',
                 name: 'Multiattack',
                 system: {
                     description: {
-                        value: 'The Archmage makes four Arcane Burst attacks.'
+                        value: 'The Ghost makes two Withering Touch attacks.'
                     }
                 }
             }],
-            ['ab-item', {
-                id: 'ab-item',
-                name: 'Arcane Burst',
-                system: { actionType: 'msak' }
+            ['wt-item', {
+                id: 'wt-item',
+                name: 'Withering Touch',
+                system: { actionType: 'mwak' }
             }]
         ])
     };
@@ -180,18 +174,46 @@ test('handleActorDrop detects existing matching pattern, switches selection to e
         const menuApp = new AutorecMenuApplication();
         menuApp._selectedId = tempUnfilled.id;
 
-        const handled = await menuApp.handleActorDrop(archmageActor, 'template');
+        // Drop Ghost onto the unfilled template
+        const handled = await menuApp.handleActorDrop(ghostActor);
         assert.equal(handled, true, 'handleActorDrop should return true');
-        assert.equal(menuApp._selectedId, existingEntry.id, 'Should switch _selectedId to the existing matching entry');
-        assert.equal(
-            autorecManager.getAllEntries().some((e) => e.id === tempUnfilled.id),
-            false,
-            'Should delete the temporary unfilled template so no duplicate or orphan remains'
+
+        // Because Two Identical Weapon Attacks already exists in Templates,
+        // handleActorDrop must auto-select Monster Override ('Ghost::Multiattack') on the new entry
+        // and MUST NOT overwrite or select Two Identical Weapon Attacks!
+        assert.notEqual(
+            menuApp._selectedId,
+            twoSameTemplate.id,
+            'Must NOT select or overwrite Two Identical Weapon Attacks template'
         );
+        assert.equal(menuApp._pendingType, 'override', 'Should default pendingType to override');
+        assert.equal(menuApp._pendingPattern, 'Ghost::Multiattack', 'Should set pattern to Ghost::Multiattack override key');
+
+        // Save the Ghost override
+        await autorecManager.registerEntry({
+            id: menuApp._selectedId,
+            name: 'Ghost Override',
+            type: 'override',
+            pattern: 'Ghost::Multiattack',
+            sequence: [[['Withering Touch', 'Withering Touch']]],
+            enabled: true
+        }, false);
+
+        // Verify Two Identical Weapon Attacks is STILL intact in Templates!
+        const twoSameAfter = autorecManager.getAllEntries().find((e) => e.id === twoSameTemplate.id);
+        assert.ok(twoSameAfter, 'Two Identical Weapon Attacks must still exist for all non-ghosts');
+        assert.equal(twoSameAfter.type, 'template');
+        assert.equal(twoSameAfter.pattern, '<ACTOR> makes two <ITEM_0> attacks.');
+
+        // Verify sidebar renders both Templates and Monster Overrides sections
+        const renderedDom = await menuApp._renderHTML({}, {});
+        assert.ok(renderedDom.innerHTML.includes('Templates'), 'Sidebar should render Templates section');
+        assert.ok(renderedDom.innerHTML.includes('Monster Overrides'), 'Sidebar should render Monster Overrides section');
     } finally {
         globalThis.document = origDoc;
     }
 });
+
 
 
 

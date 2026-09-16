@@ -211,13 +211,18 @@ export class AutorecManager {
     }
 
     /**
-     * Finds an existing AutorecEntry with the same normalized pattern (optionally excluding a specific entry ID).
+     * Finds an existing AutorecEntry with the same normalized pattern within the specified category ('template' or 'override').
      */
-    findDuplicatePattern(pattern: string, excludeId?: string): AutorecEntry | null {
+    findDuplicatePattern(
+        pattern: string,
+        excludeId?: string,
+        category?: 'template' | 'override'
+    ): AutorecEntry | null {
         const clean = this._normalizePatternKey(pattern ?? '');
         if (!clean) return null;
         for (const entry of this._entries.values()) {
             if (excludeId && entry.id === excludeId) continue;
+            if (category && entry.type !== category) continue;
             if (this._normalizePatternKey(entry.pattern) === clean) {
                 return entry;
             }
@@ -227,20 +232,31 @@ export class AutorecManager {
 
     /**
      * Registers or updates an AutorecEntry in the central store.
-     * If a new entry's pattern matches an existing entry, prevents creating a duplicate and updates/returns the existing entry.
+     * Templates and Overrides are matched strictly within their own category.
+     * Never allows saving an override over an existing filled template (or vice versa).
      * @param {AutorecEntry} entry Entry to register
      * @param {boolean} [persist=true] Whether to persist to world settings immediately
      */
     async registerEntry(entry: AutorecEntry, persist: boolean = true): Promise<AutorecEntry> {
         const rawPattern = (entry.pattern ?? '').trim();
+        const targetType: 'override' | 'template' = entry.type === 'override' ? 'override' : 'template';
+
+        let effectiveId = entry.id ? entry.id : `bam-${adapter.randomID(8)}`;
+        const existingSelf = entry.id ? this._entries.get(entry.id) : undefined;
+
+        // Safeguard: If an existing filled entry is switching categories (e.g. from 'template' to 'override'),
+        // never overwrite the original entry in the other category—allocate a new ID for the new category entry.
+        if (existingSelf && existingSelf.pattern.trim().length > 0 && existingSelf.type !== targetType) {
+            effectiveId = `bam-${adapter.randomID(8)}`;
+        }
 
         if (rawPattern) {
-            const dup = this.findDuplicatePattern(rawPattern, entry.id);
+            const dup = this.findDuplicatePattern(rawPattern, effectiveId, targetType);
             if (dup) {
                 // If entry.id was a temporary unfilled entry, delete the temporary unfilled entry
                 if (entry.id && entry.id !== dup.id) {
-                    const existingSelf = this._entries.get(entry.id);
-                    if (!existingSelf || !existingSelf.pattern.trim()) {
+                    const selfEntry = this._entries.get(entry.id);
+                    if (!selfEntry || !selfEntry.pattern.trim()) {
                         this._entries.delete(entry.id);
                     }
                 }
@@ -259,9 +275,9 @@ export class AutorecManager {
         }
 
         const cleanEntry: AutorecEntry = {
-            id: entry.id ? entry.id : `bam-${adapter.randomID(8)}`,
-            name: entry.name ? entry.name : (rawPattern ? rawPattern.slice(0, 48) : 'New Template'),
-            type: entry.type === 'override' ? 'override' : 'template',
+            id: effectiveId,
+            name: entry.name ? entry.name : (rawPattern ? rawPattern.slice(0, 48) : (targetType === 'override' ? 'New Override' : 'New Template')),
+            type: targetType,
             pattern: rawPattern,
             sequence: Array.isArray(entry.sequence) ? entry.sequence : [],
             enabled: entry.enabled !== false,
