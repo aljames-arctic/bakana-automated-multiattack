@@ -62,4 +62,9 @@ export class AutorecExchangeMenuApplication extends BaseApp {
 
         return container;
     }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    _replaceHTML(result: HTMLElement, content: HTMLElement, _options: any): void {
+        content.replaceChildren(result);
+    }
 }
