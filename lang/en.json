@@ -47,7 +47,7 @@
         "hint": "Import or export central multiattack autorecognition configurations as JSON."
       },
       "automatedSupportMenu": {
-        "name": "Automated Support (LLM) Configuration",
+        "name": "Automated Support",
         "label": "Configure Automated Support",
         "hint": "Configure optional AI / LLM fallback parsing and sequence repair agent settings."
       },

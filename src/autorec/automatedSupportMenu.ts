@@ -13,7 +13,7 @@ export class AutomatedSupportMenuApplication extends BaseApp {
         id: 'bam-automated-support-menu',
         tag: 'div',
         window: {
-            title: 'Configure Automated Support (LLM)',
+            title: 'Automated Support',
             icon: 'fa-solid fa-robot',
             resizable: true
         },
@@ -49,7 +49,7 @@ export class AutomatedSupportMenuApplication extends BaseApp {
 
             <div style="display: flex; align-items: center; justify-content: space-between; background: #1e2436; padding: 10px 12px; border-radius: 6px; border: 1px solid #334155;">
                 <div>
-                    <div style="font-weight: 600; color: #f8fafc; font-size: 0.9rem;">Enable Automated Support (LLM)</div>
+                    <div style="font-weight: 600; color: #f8fafc; font-size: 0.9rem;">Enable Automated Support</div>
                     <div style="font-size: 0.78rem; color: #94a3b8;">Allow unknown multiattack phrasings to fall back to the configured LLM and enable the interactive JSON Repair Agent.</div>
                 </div>
                 <input type="checkbox" id="bam-llm-enable" ${enableLlmFallback ? 'checked' : ''} style="width: 18px; height: 18px; cursor: pointer;" />
