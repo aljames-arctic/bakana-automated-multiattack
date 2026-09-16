@@ -1,0 +1,50 @@
+name: System / Module Adapter Request
+description: Request support for a new game system or third-party module integration.
+title: "[Adapter Request]: <System/Module Name>"
+labels: ["adapter-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for requesting an adapter! Supporting new game systems and workflow modules is a key goal of Bakana's Automated Multiattack.
+        
+        To help us build this adapter, please fill out the details below. We will likely need to inspect item/activity data structures with you, so providing a contact method is highly appreciated.
+  
+  - type: input
+    id: system_name
+    attributes:
+      label: System / Module Name
+      description: What game system (e.g., Lancer, Pathfinder 2e) or workflow module are you requesting support for?
+      placeholder: e.g., Pathfinder 2e (system) or Ready Up (module)
+    validations:
+      required: true
+
+  - type: input
+    id: discord_handle
+    attributes:
+      label: Discord Handle
+      description: We will likely need to discuss corner cases, item flags, or multiattack workflows with you. Please provide your Discord handle.
+      placeholder: e.g., username#0000 or username
+    validations:
+      required: true
+
+  - type: textarea
+    id: item_json
+    attributes:
+      label: Item / Activity / Actor JSON Exports
+      description: |
+        Please export one or more multiattack items/actors from your system as JSON and paste their contents here, or attach the `.json` files directly.
+        
+        **Important**: Please highlight how multiattack and individual attack items are triggered in this system/module.
+      placeholder: Paste JSON content or drag-and-drop .json files here...
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional_features
+    attributes:
+      label: Additional System-Specific Multiattack Mechanics
+      description: Describe any special multiattack mechanics for this system (e.g., multiple attack penalties, action cost tracking).
+      placeholder: e.g., "In this system multiattack consumes 2 actions..."
+    validations:
+      required: false
