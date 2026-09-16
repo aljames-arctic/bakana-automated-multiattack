@@ -1,4 +1,5 @@
 import { autorecManager } from './autorecManager.js';
+import { adapter } from '../adapter/index.js';
 import { abstractMultiattackDescription } from '../multiattack/abstraction.js';
 import { parseMultiattackTemplate } from '../multiattack/parser.js';
 import { stripOrderPrefix } from '../multiattack/executor.js';
@@ -120,15 +121,32 @@ export function summarizeSequenceInPlainEnglish(sequence: MultiattackSequence): 
     return stepSummaries.join('');
 }
 
+export interface DroppedActorInfo {
+    actorName: string;
+    actorImg: string;
+    itemName: string;
+    rawDescription: string;
+    templateText: string;
+    overrideKey: string;
+    itemMap: Record<string, string>;
+    templateSequence: MultiattackSequence;
+    concreteSequence: MultiattackSequence;
+    mode: 'template' | 'override';
+}
+
 /**
  * ApplicationV2 Menu for inspecting, editing, testing, and managing central Multiattack Autorecognition entries
- * with a human-readable Visual Multiattack Flow Builder.
+ * with a human-readable Visual Multiattack Flow Builder and Drag-and-Drop Monster Auto-Fill.
  */
 export class AutorecMenuApplication extends BaseApp {
     private _selectedId: string | null = null;
     private _searchFilter: string = '';
     private _workingSequence: MultiattackSequence | null = null;
     private _lastSelectedIdForWorking: string | null = null;
+    private _droppedActor: DroppedActorInfo | null = null;
+    private _pendingName: string | null = null;
+    private _pendingPattern: string | null = null;
+    private _pendingType: 'template' | 'override' | null = null;
 
     static DEFAULT_OPTIONS = {
         id: 'bam-autorec-menu',
@@ -140,10 +158,95 @@ export class AutorecMenuApplication extends BaseApp {
         },
         position: {
             width: 860,
-            height: 640
+            height: 660
         },
         classes: ['bam-autorec-app']
     };
+
+    /**
+     * Reads a dropped Actor document, extracts its Multiattack item & weapons, resolves 2024 enrichers,
+     * builds both abstract template and concrete sequences, and populates the editor.
+     */
+    async handleActorDrop(actor: Actor, mode: 'template' | 'override' = 'template'): Promise<boolean> {
+        if (!actor) return false;
+
+        const items = adapter.getActorItems(actor);
+        const maItem = items.find((i: Item) => adapter.isMultiattackItem(i));
+        if (!maItem) {
+            notify.warn(`No Multiattack feature found on actor "${actor.name}".`);
+            return false;
+        }
+
+        const rawDescription = adapter.getItemDescription(maItem);
+        const { template, itemMap } = abstractMultiattackDescription(rawDescription, items, actor.name);
+        const parsedTemplateSeq = parseMultiattackTemplate(template);
+        const templateSequence: MultiattackSequence = parsedTemplateSeq ?? [[['<ITEM_0>']]];
+
+        const concreteSequence: MultiattackSequence = templateSequence.map((section) =>
+            section.map((flow) =>
+                flow.map((token) => {
+                    const strict = token.trim().startsWith('>');
+                    const clean = stripOrderPrefix(token);
+                    const concreteName = itemMap[clean.toUpperCase()] ?? clean;
+                    return strict ? `>${concreteName}` : concreteName;
+                })
+            )
+        );
+
+        // Ensure an entry is selected so the inspector is active
+        if (!this._selectedId) {
+            const entries = autorecManager.getAllEntries();
+            if (entries.length > 0 && entries[0]) {
+                this._selectedId = entries[0].id;
+            } else {
+                const created = await autorecManager.registerEntry({
+                    id: '',
+                    name: `${actor.name} Multiattack`,
+                    type: mode,
+                    pattern: mode === 'override' ? `${actor.name}::${maItem.name}` : template,
+                    sequence: mode === 'override' ? concreteSequence : templateSequence,
+                    enabled: true
+                });
+                this._selectedId = created.id;
+            }
+        }
+
+        this._droppedActor = {
+            actorName: actor.name ?? 'Monster',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            actorImg: (actor as any).img ?? 'icons/svg/mystery-man.svg',
+            itemName: maItem.name ?? 'Multiattack',
+            rawDescription,
+            templateText: template,
+            overrideKey: `${actor.name}::${maItem.name}`,
+            itemMap,
+            templateSequence,
+            concreteSequence,
+            mode
+        };
+
+        this._applyDroppedActorMode(mode);
+        notify.info(`Loaded Multiattack from "${actor.name}"!`);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (this as any).render?.();
+        return true;
+    }
+
+    private _applyDroppedActorMode(mode: 'template' | 'override'): void {
+        if (!this._droppedActor) return;
+        this._droppedActor.mode = mode;
+        if (mode === 'template') {
+            this._pendingName = `${this._droppedActor.actorName} Pattern`;
+            this._pendingPattern = this._droppedActor.templateText;
+            this._pendingType = 'template';
+            this._workingSequence = JSON.parse(JSON.stringify(this._droppedActor.templateSequence));
+        } else {
+            this._pendingName = `${this._droppedActor.actorName} Override`;
+            this._pendingPattern = this._droppedActor.overrideKey;
+            this._pendingType = 'override';
+            this._workingSequence = JSON.parse(JSON.stringify(this._droppedActor.concreteSequence));
+        }
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async _renderHTML(_context: any, _options: any): Promise<HTMLElement> {
@@ -156,7 +259,13 @@ export class AutorecMenuApplication extends BaseApp {
         const selected = entries.find((e) => e.id === this._selectedId) ?? entries[0] ?? null;
         if (selected) {
             this._selectedId = selected.id;
-            if (this._lastSelectedIdForWorking !== selected.id || !this._workingSequence) {
+            if (this._lastSelectedIdForWorking !== selected.id && !this._droppedActor) {
+                this._workingSequence = JSON.parse(JSON.stringify(selected.sequence));
+                this._lastSelectedIdForWorking = selected.id;
+                this._pendingName = null;
+                this._pendingPattern = null;
+                this._pendingType = null;
+            } else if (!this._workingSequence) {
                 this._workingSequence = JSON.parse(JSON.stringify(selected.sequence));
                 this._lastSelectedIdForWorking = selected.id;
             }
@@ -178,6 +287,14 @@ export class AutorecMenuApplication extends BaseApp {
         const seq = this._workingSequence ?? [[['<ITEM_0>']]];
         const summaryHtml = summarizeSequenceInPlainEnglish(seq);
 
+        const activeChoices = STANDARD_TOKEN_CHOICES.map((c) => {
+            const mappedWeapon = this._droppedActor?.itemMap[c.value.toUpperCase()];
+            return {
+                value: c.value,
+                label: mappedWeapon ? `${c.label} — ${mappedWeapon}` : c.label
+            };
+        });
+
         const stepsBuilderHtml = seq.map((section, sectionIdx) => {
             const nonEmptyFlows = (Array.isArray(section) ? section : []).filter((f) => f.length > 0);
             const hasOptionalExit = (Array.isArray(section) ? section : []).some((f) => f.length === 0);
@@ -186,10 +303,10 @@ export class AutorecMenuApplication extends BaseApp {
             const branchesHtml = displayFlows.map((flow, flowIdx) => {
                 const groups = groupFlowTokens(flow);
                 const pillsHtml = groups.map((group, groupIdx) => {
-                    const isStandard = STANDARD_TOKEN_CHOICES.some(
+                    const isStandard = activeChoices.some(
                         (c) => c.value.toLowerCase() === group.token.toLowerCase()
                     );
-                    const optionsHtml = STANDARD_TOKEN_CHOICES.map(
+                    const optionsHtml = activeChoices.map(
                         (c) => `<option value="${c.value}" ${c.value.toLowerCase() === group.token.toLowerCase() ? 'selected' : ''}>${c.label}</option>`
                     ).join('') + `<option value="__CUSTOM__" ${!isStandard ? 'selected' : ''}>Custom Weapon / Pool...</option>`;
 
@@ -267,8 +384,61 @@ export class AutorecMenuApplication extends BaseApp {
             `;
         }).join('');
 
+        const dropZoneHtml = this._droppedActor ? `
+            <div class="bam-dropped-actor-card" id="bam-actor-dropzone">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <img src="${this._droppedActor.actorImg}" alt="${this._droppedActor.actorName}" style="width: 38px; height: 38px; border-radius: 6px; object-fit: cover; border: 1px solid #818cf8;" />
+                        <div>
+                            <div style="font-weight: 700; color: #fff; font-size: 0.88rem;">
+                                ${this._droppedActor.actorName} <span style="font-weight: 400; color: #94a3b8; font-size: 0.76rem;">(${this._droppedActor.itemName})</span>
+                            </div>
+                            <div style="font-size: 0.75rem; color: #cbd5e1; font-style: italic;">
+                                "${this._droppedActor.rawDescription}"
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" id="bam-clear-dropped-btn" class="bam-pill-btn" title="Clear dropped monster" style="font-size: 1rem; color: #94a3b8;">&times;</button>
+                </div>
+                <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding-top: 4px; border-top: 1px solid rgba(99, 102, 241, 0.25);">
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+                        <span style="font-size: 0.74rem; color: #94a3b8;">Detected Weapons:</span>
+                        ${Object.entries(this._droppedActor.itemMap).map(([k, v]) => `
+                            <span class="bam-weapon-mapping-pill"><b style="color:#a5b4fc;">${k}</b> &rarr; ${v}</span>
+                        `).join('')}
+                    </div>
+                    <div style="display: flex; gap: 6px;">
+                        <button type="button" id="bam-drop-mode-template" class="bam-option-btn" style="width: auto; padding: 3px 10px; font-size: 0.74rem; ${this._droppedActor.mode === 'template' ? 'border-color: #818cf8; background: rgba(99, 102, 241, 0.35); font-weight: 700;' : ''}">
+                            <i class="fas fa-shapes"></i> Reusable Template (&lt;ITEM_N&gt;)
+                        </button>
+                        <button type="button" id="bam-drop-mode-override" class="bam-option-btn" style="width: auto; padding: 3px 10px; font-size: 0.74rem; ${this._droppedActor.mode === 'override' ? 'border-color: #818cf8; background: rgba(99, 102, 241, 0.35); font-weight: 700;' : ''}">
+                            <i class="fas fa-user-tag"></i> Specific Monster Override
+                        </button>
+                    </div>
+                </div>
+            </div>
+        ` : `
+            <div class="bam-actor-dropzone" id="bam-actor-dropzone">
+                <i class="fas fa-dragon" style="font-size: 1.45rem; color: #818cf8;"></i>
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                    <div style="font-weight: 600; color: #e2e8f0; font-size: 0.84rem;">
+                        Drag &amp; Drop Any Monster Actor Here to Auto-Fill
+                    </div>
+                    <div style="font-size: 0.75rem; color: #94a3b8;">
+                        Drop an Actor from the Sidebar or Compendium to automatically extract Multiattack text, weapons, and 2024 enrichers
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const displayName = this._pendingName ?? selected?.name ?? '';
+        const displayPattern = this._pendingPattern ?? selected?.pattern ?? '';
+
         const inspectorHtml = selected ? `
             <div style="display: flex; flex-direction: column; gap: 12px;">
+                <!-- Drag & Drop Monster Auto-Fill Zone -->
+                ${dropZoneHtml}
+
                 <!-- Plain English Summary Banner -->
                 <div class="bam-summary-banner">
                     <div class="bam-summary-title">
@@ -279,30 +449,14 @@ export class AutorecMenuApplication extends BaseApp {
                     </div>
                 </div>
 
-                <!-- Auto-Fill from Monster Description Helper -->
-                <details class="bam-autofill-panel">
-                    <summary style="cursor: pointer; font-size: 0.8rem; font-weight: 600; color: #a5b4fc;">
-                        <i class="fas fa-wand-magic-sparkles"></i> Auto-Fill from Monster Multiattack Text
-                    </summary>
-                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
-                        <input type="text" id="bam-autofill-desc" placeholder="Paste monster Multiattack text (e.g. The monster makes four Arcane Burst attacks.)" style="padding: 5px 8px; background: #1e2436; border: 1px solid #4f46e5; color: #fff; border-radius: 4px; font-size: 0.8rem;" />
-                        <div style="display: flex; gap: 8px;">
-                            <input type="text" id="bam-autofill-items" placeholder="Monster weapon names, comma-separated (e.g. Arcane Burst, Staff)" style="flex: 1; padding: 5px 8px; background: #1e2436; border: 1px solid #4f46e5; color: #fff; border-radius: 4px; font-size: 0.8rem;" />
-                            <button type="button" id="bam-autofill-btn" class="bam-chat-card-btn" style="width: auto; padding: 4px 12px;">
-                                Parse &amp; Fill
-                            </button>
-                        </div>
-                    </div>
-                </details>
-
                 <div style="display: flex; gap: 10px;">
                     <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
                         <label style="font-size: 0.78rem; color: #94a3b8;">Entry Name</label>
-                        <input type="text" id="bam-edit-name" value="${selected.name}" style="padding: 6px; background: #1e2436; border: 1px solid #4f46e5; color: #fff; border-radius: 4px;" />
+                        <input type="text" id="bam-edit-name" value="${displayName}" style="padding: 6px; background: #1e2436; border: 1px solid #4f46e5; color: #fff; border-radius: 4px;" />
                     </div>
                     <div style="flex: 2; display: flex; flex-direction: column; gap: 4px;">
                         <label style="font-size: 0.78rem; color: #94a3b8;">Pattern / Key (Abstracted sentence or Actor::Item override)</label>
-                        <input type="text" id="bam-edit-pattern" value="${selected.pattern}" style="padding: 6px; background: #1e2436; border: 1px solid #4f46e5; color: #fff; border-radius: 4px; font-family: monospace;" />
+                        <input type="text" id="bam-edit-pattern" value="${displayPattern}" style="padding: 6px; background: #1e2436; border: 1px solid #4f46e5; color: #fff; border-radius: 4px; font-family: monospace;" />
                     </div>
                 </div>
 
@@ -336,7 +490,7 @@ export class AutorecMenuApplication extends BaseApp {
                     </button>
                 </div>
             </div>
-        ` : `<div style="color: #94a3b8;">No entries found.</div>`;
+        ` : `<div style="color: #94a3b8;">No entries found. Drag &amp; drop any Monster Actor here to create one.</div>`;
 
         container.innerHTML = `
             <div class="bam-autorec-topbar">
@@ -412,9 +566,79 @@ export class AutorecMenuApplication extends BaseApp {
             el.addEventListener('click', () => {
                 this._selectedId = el.getAttribute('data-entry-id');
                 this._workingSequence = null;
+                this._droppedActor = null;
+                this._pendingName = null;
+                this._pendingPattern = null;
+                this._pendingType = null;
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 (this as any).render?.();
             });
+        });
+
+        // Drag & Drop handlers on the dropzone and inspector panel
+        const dropTargets = [
+            root.querySelector('#bam-actor-dropzone'),
+            root.querySelector('.bam-autorec-inspector')
+        ].filter(Boolean) as HTMLElement[];
+
+        const dropZoneEl = root.querySelector('#bam-actor-dropzone') as HTMLElement | null;
+
+        dropTargets.forEach((target) => {
+            target.addEventListener('dragover', (ev: DragEvent) => {
+                ev.preventDefault();
+                if (ev.dataTransfer) {
+                    ev.dataTransfer.dropEffect = 'copy';
+                }
+                dropZoneEl?.classList.add('dragover');
+            });
+
+            target.addEventListener('dragleave', () => {
+                dropZoneEl?.classList.remove('dragover');
+            });
+
+            target.addEventListener('drop', async (ev: DragEvent) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                dropZoneEl?.classList.remove('dragover');
+
+                const rawData = ev.dataTransfer?.getData('text/plain');
+                if (!rawData) return;
+
+                try {
+                    const data = JSON.parse(rawData) as Record<string, unknown>;
+                    const actor = await adapter.resolveActorFromDropData(data);
+                    if (!actor) {
+                        notify.warn('Could not resolve an Actor from the dropped item.');
+                        return;
+                    }
+                    await this.handleActorDrop(actor, 'template');
+                } catch (_err) {
+                    notify.warn('Invalid drag-and-drop payload.');
+                }
+            });
+        });
+
+        // Dropped actor mode switch buttons
+        root.querySelector('#bam-drop-mode-template')?.addEventListener('click', () => {
+            this._applyDroppedActorMode('template');
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (this as any).render?.();
+        });
+
+        root.querySelector('#bam-drop-mode-override')?.addEventListener('click', () => {
+            this._applyDroppedActorMode('override');
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (this as any).render?.();
+        });
+
+        root.querySelector('#bam-clear-dropped-btn')?.addEventListener('click', () => {
+            this._droppedActor = null;
+            this._pendingName = null;
+            this._pendingPattern = null;
+            this._pendingType = null;
+            this._workingSequence = null;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (this as any).render?.();
         });
 
         // Decrement pill count
@@ -583,34 +807,6 @@ export class AutorecMenuApplication extends BaseApp {
             });
         });
 
-        // Auto-Fill from Monster Description
-        const autofillBtn = root.querySelector('#bam-autofill-btn');
-        autofillBtn?.addEventListener('click', () => {
-            const descEl = root.querySelector('#bam-autofill-desc') as HTMLInputElement | null;
-            const itemsEl = root.querySelector('#bam-autofill-items') as HTMLInputElement | null;
-            const patternEl = root.querySelector('#bam-edit-pattern') as HTMLInputElement | null;
-            if (!descEl || !descEl.value.trim()) {
-                notify.warn('Please paste a monster Multiattack description first.');
-                return;
-            }
-            const itemNames = (itemsEl?.value ?? '')
-                .split(',')
-                .map((s) => s.trim())
-                .filter(Boolean);
-            const result = AutorecMenuApplication.previewParse(descEl.value.trim(), itemNames);
-            if (patternEl && result.template) {
-                patternEl.value = result.template;
-            }
-            if (result.sequence && Array.isArray(result.sequence)) {
-                this._workingSequence = result.sequence as MultiattackSequence;
-                notify.info('Auto-generated Multiattack pattern and visual sequence!');
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                (this as any).render?.();
-            } else {
-                notify.warn('Abstracted pattern created, but could not deterministically parse sequence. Adjust the visual builder below.');
-            }
-        });
-
         // Raw JSON textarea manual edit sync
         const rawJsonEl = root.querySelector('#bam-edit-sequence') as HTMLTextAreaElement | null;
         rawJsonEl?.addEventListener('change', () => {
@@ -638,6 +834,10 @@ export class AutorecMenuApplication extends BaseApp {
             });
             this._selectedId = newEntry.id;
             this._workingSequence = null;
+            this._droppedActor = null;
+            this._pendingName = null;
+            this._pendingPattern = null;
+            this._pendingType = null;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (this as any).render?.();
         });
@@ -646,6 +846,10 @@ export class AutorecMenuApplication extends BaseApp {
         resetBtn?.addEventListener('click', async () => {
             await autorecManager.resetToDefaults(true);
             this._workingSequence = null;
+            this._droppedActor = null;
+            this._pendingName = null;
+            this._pendingPattern = null;
+            this._pendingType = null;
             notify.info('Reset multiattack autorecognition entries to system defaults.');
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (this as any).render?.();
@@ -661,14 +865,18 @@ export class AutorecMenuApplication extends BaseApp {
 
             try {
                 const parsedSeq = this._workingSequence ?? (seqEl ? JSON.parse(seqEl.value) : [[['<ITEM_0>']]]);
+                const entryType = this._pendingType ?? (patternEl.value.includes('::') ? 'override' : 'template');
                 await autorecManager.registerEntry({
                     id: this._selectedId,
                     name: nameEl.value.trim(),
-                    type: patternEl.value.includes('::') ? 'override' : 'template',
+                    type: entryType,
                     pattern: patternEl.value.trim(),
                     sequence: parsedSeq,
                     enabled: true
                 });
+                this._pendingName = null;
+                this._pendingPattern = null;
+                this._pendingType = null;
                 notify.info(`Saved Multiattack Autorec entry: "${nameEl.value.trim()}"`);
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 (this as any).render?.();
@@ -683,6 +891,10 @@ export class AutorecMenuApplication extends BaseApp {
             await autorecManager.deleteEntry(this._selectedId);
             this._selectedId = null;
             this._workingSequence = null;
+            this._droppedActor = null;
+            this._pendingName = null;
+            this._pendingPattern = null;
+            this._pendingType = null;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (this as any).render?.();
         });
@@ -702,3 +914,4 @@ export class AutorecMenuApplication extends BaseApp {
         return { template, itemMap, sequence };
     }
 }
+

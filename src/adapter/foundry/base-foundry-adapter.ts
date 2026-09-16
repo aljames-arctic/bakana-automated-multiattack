@@ -95,6 +95,50 @@ export class BaseFoundryAdapter {
     }
 
     /**
+     * Resolves an Actor document from a Foundry drag-and-drop payload (Actor, Item on Actor, or Token UUID/ID).
+     * @param {Record<string, unknown>} data Parsed drop data object
+     * @returns {Promise<Actor|null>}
+     */
+    async resolveActorFromDropData(data: Record<string, unknown>): Promise<Actor | null> {
+        if (!data) return null;
+
+        const rawUuid = String(data.uuid ?? '').trim();
+        if (rawUuid) {
+            try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const doc = (await fromUuid?.(rawUuid)) as any;
+                if (doc) {
+                    if (doc.documentName === 'Actor' || doc.items) {
+                        return doc as Actor;
+                    }
+                    if (doc.documentName === 'Item' && (doc.actor ?? doc.parent)) {
+                        return (doc.actor ?? doc.parent) as Actor;
+                    }
+                    if (doc.actor) {
+                        return doc.actor as Actor;
+                    }
+                }
+            } catch {
+                // Fall through to ID lookup
+            }
+
+            if (rawUuid.startsWith('Actor.')) {
+                const actorId = rawUuid.slice(6);
+                const found = game.actors?.get(actorId);
+                if (found) return found;
+            }
+        }
+
+        const rawId = String(data.id ?? data.actorId ?? '').trim();
+        if (rawId) {
+            const found = game.actors?.get(rawId);
+            if (found) return found;
+        }
+
+        return null;
+    }
+
+    /**
      * Determines whether the active client user is the user who created the given ChatMessage.
      * @param {ChatMessage|null|undefined} message Chat message document
      * @param {string} [hookUserId] Optional userId passed as the 3rd argument to createChatMessage hook

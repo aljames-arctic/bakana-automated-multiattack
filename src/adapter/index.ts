@@ -63,8 +63,20 @@ class Adapter {
         return this.system.getActorItems(actor);
     }
 
+    isMultiattackItem(item: Item): boolean {
+        return this.system.isMultiattackItem(item);
+    }
+
+    getItemDescription(item: Item): string {
+        return this.system.getItemDescription(item);
+    }
+
     getItemActionType(item: Item): 'mwak' | 'rwak' | 'msak' | 'rsak' | 'other' {
         return this.system.getItemActionType(item);
+    }
+
+    async resolveActorFromDropData(data: Record<string, unknown>): Promise<Actor | null> {
+        return this.foundry.resolveActorFromDropData(data);
     }
 
     async selectOptionDialog(options: SelectOptionItem[], config: SelectDialogConfig = {}): Promise<string | null> {

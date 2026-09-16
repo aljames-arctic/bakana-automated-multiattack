@@ -142,6 +142,28 @@ export class BaseSystemAdapter {
     }
 
     /**
+     * Checks whether an Item document is a Multiattack feature by checking its localized name.
+     * @param {Item} item Target Item document
+     * @returns {boolean}
+     */
+    isMultiattackItem(item: Item): boolean {
+        if (!item?.name) return false;
+        return isLocalizedMultiattackName(item.name);
+    }
+
+    /**
+     * Retrieves and cleans the plain-text description of an Item document.
+     * @param {Item} item Target Item document
+     * @returns {string}
+     */
+    getItemDescription(item: Item): string {
+        if (!item) return '';
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const rawDesc = (item as any).system?.description?.value ?? '';
+        return this.cleanDescriptionText(rawDesc);
+    }
+
+    /**
      * Determines the action type of an item ('mwak', 'rwak', 'msak', 'rsak', or 'other').
      * @param {Item} item Target Item document
      * @returns {'mwak' | 'rwak' | 'msak' | 'rsak' | 'other'}

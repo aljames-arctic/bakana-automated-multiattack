@@ -371,10 +371,45 @@
     font-size: 0.8rem;
 }
 
-.bam-autofill-panel {
+.bam-actor-dropzone {
     background: rgba(15, 19, 30, 0.85);
-    border: 1px dashed rgba(99, 102, 241, 0.4);
-    border-radius: 6px;
-    padding: 8px 12px;
+    border: 2px dashed rgba(99, 102, 241, 0.45);
+    border-radius: 8px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
 }
+
+.bam-actor-dropzone:hover,
+.bam-actor-dropzone.dragover {
+    background: rgba(79, 70, 229, 0.22);
+    border-color: #818cf8;
+    box-shadow: 0 0 12px rgba(99, 102, 241, 0.25);
+}
+
+.bam-dropped-actor-card {
+    background: linear-gradient(135deg, rgba(30, 36, 54, 0.95) 0%, rgba(15, 19, 30, 0.95) 100%);
+    border: 1px solid rgba(99, 102, 241, 0.5);
+    border-radius: 8px;
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.bam-weapon-mapping-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 0.76rem;
+    color: #e2e8f0;
+}
+
 

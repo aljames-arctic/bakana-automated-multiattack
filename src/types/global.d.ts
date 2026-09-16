@@ -56,6 +56,8 @@ declare global {
         }
     }
 
+    function fromUuid(uuid: string): Promise<unknown>;
+
     interface Window {
         bakanaMultiattack?: {
             adapter: unknown;
