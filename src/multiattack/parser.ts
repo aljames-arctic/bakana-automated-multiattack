@@ -164,13 +164,18 @@ function parseQuantifiedItemList(phrase: string, grammar: LocalizedGrammar): str
         results.push(...repeatToken(normalizedTarget, qty));
     }
 
-    // Fallback: if no quantified pairs matched, look for standalone <ITEM_N> tokens in order
+    // Fallback: if no quantified pairs matched, look for standalone <ITEM_N> tokens only if a recognized action verb is present
     if (results.length === 0) {
-        const singleItemRegex = /(<ITEM_\d+>)/g;
-        let singleMatch: RegExpExecArray | null;
-        while ((singleMatch = singleItemRegex.exec(phrase)) !== null) {
-            if (singleMatch[1]) {
-                results.push(singleMatch[1]);
+        const hasActionVerb = grammar.actionVerbs.some((v) =>
+            new RegExp(`\\b${escapeRegExp(v).replace(/\s+/g, '\\s+')}\\b`, 'iu').test(phrase)
+        );
+        if (hasActionVerb) {
+            const singleItemRegex = /(<ITEM_\d+>)/g;
+            let singleMatch: RegExpExecArray | null;
+            while ((singleMatch = singleItemRegex.exec(phrase)) !== null) {
+                if (singleMatch[1]) {
+                    results.push(singleMatch[1]);
+                }
             }
         }
     }

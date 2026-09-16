@@ -13,11 +13,20 @@ export interface AbstractedMultiattack {
     reverseMap: Record<string, string>;
 }
 
+export interface AutorecLlmMetadata {
+    actorName: string;
+    itemName: string;
+    overrideKey: string;
+    templatePattern: string;
+    rawDescription: string;
+    itemMap: Record<string, string>;
+}
+
 export interface AutorecEntry {
     id: string;
     name: string;
-    /** 'template' for abstracted <ITEM_N> patterns, 'override' for specific Actor::Item overrides */
-    type: 'template' | 'override';
+    /** 'template' for abstracted <ITEM_N> patterns, 'override' for specific Actor::Item overrides, 'llm' for LLM-generated entries pending review */
+    type: 'template' | 'override' | 'llm';
     /** Abstracted template string or Actor::Item key */
     pattern: string;
     /** 3D sequence of attack options per 'then' section */
@@ -25,6 +34,7 @@ export interface AutorecEntry {
     enabled: boolean;
     sourceModule?: string;
     version?: string;
+    llmMetadata?: AutorecLlmMetadata;
 }
 
 export interface SelectOptionItem {

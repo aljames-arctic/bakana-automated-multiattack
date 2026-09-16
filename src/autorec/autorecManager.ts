@@ -211,12 +211,12 @@ export class AutorecManager {
     }
 
     /**
-     * Finds an existing AutorecEntry with the same normalized pattern within the specified category ('template' or 'override').
+     * Finds an existing AutorecEntry with the same normalized pattern within the specified category ('template', 'override', or 'llm').
      */
     findDuplicatePattern(
         pattern: string,
         excludeId?: string,
-        category?: 'template' | 'override'
+        category?: 'template' | 'override' | 'llm'
     ): AutorecEntry | null {
         const clean = this._normalizePatternKey(pattern ?? '');
         if (!clean) return null;
@@ -232,31 +232,38 @@ export class AutorecManager {
 
     /**
      * Registers or updates an AutorecEntry in the central store.
-     * Templates and Overrides are matched strictly within their own category.
-     * Never allows saving an override over an existing filled template (or vice versa).
+     * Templates, Overrides, and LLM entries are matched within their own category.
+     * When an 'llm' entry is approved into 'template' or 'override', it promotes cleanly and clears llmMetadata.
      * @param {AutorecEntry} entry Entry to register
      * @param {boolean} [persist=true] Whether to persist to world settings immediately
      */
     async registerEntry(entry: AutorecEntry, persist: boolean = true): Promise<AutorecEntry> {
         const rawPattern = (entry.pattern ?? '').trim();
-        const targetType: 'override' | 'template' = entry.type === 'override' ? 'override' : 'template';
+        const targetType: 'override' | 'template' | 'llm' =
+            entry.type === 'override' ? 'override' : (entry.type === 'llm' ? 'llm' : 'template');
 
         let effectiveId = entry.id ? entry.id : `bam-${adapter.randomID(8)}`;
         const existingSelf = entry.id ? this._entries.get(entry.id) : undefined;
 
-        // Safeguard: If an existing filled entry is switching categories (e.g. from 'template' to 'override'),
-        // never overwrite the original entry in the other category—allocate a new ID for the new category entry.
-        if (existingSelf && existingSelf.pattern.trim().length > 0 && existingSelf.type !== targetType) {
+        // Safeguard: If an existing filled 'template' or 'override' entry is switching between 'template' and 'override',
+        // never overwrite the original entry in the other category—allocate a new ID.
+        // However, if existingSelf.type === 'llm', we are approving/promoting it into 'template' or 'override', so it replaces the 'llm' entry.
+        if (
+            existingSelf &&
+            existingSelf.pattern.trim().length > 0 &&
+            existingSelf.type !== 'llm' &&
+            existingSelf.type !== targetType
+        ) {
             effectiveId = `bam-${adapter.randomID(8)}`;
         }
 
         if (rawPattern) {
             const dup = this.findDuplicatePattern(rawPattern, effectiveId, targetType);
             if (dup) {
-                // If entry.id was a temporary unfilled entry, delete the temporary unfilled entry
+                // If entry.id was a temporary unfilled entry or an 'llm' entry being approved into an existing duplicate, delete it
                 if (entry.id && entry.id !== dup.id) {
                     const selfEntry = this._entries.get(entry.id);
-                    if (!selfEntry || !selfEntry.pattern.trim()) {
+                    if (!selfEntry || !selfEntry.pattern.trim() || selfEntry.type === 'llm') {
                         this._entries.delete(entry.id);
                     }
                 }
@@ -264,7 +271,8 @@ export class AutorecManager {
                     ...dup,
                     name: entry.name ? entry.name : dup.name,
                     sequence: Array.isArray(entry.sequence) && entry.sequence.length > 0 ? entry.sequence : dup.sequence,
-                    enabled: entry.enabled !== false
+                    enabled: entry.enabled !== false,
+                    llmMetadata: targetType === 'llm' ? (entry.llmMetadata ?? dup.llmMetadata) : undefined
                 };
                 this._entries.set(dup.id, updatedDup);
                 if (persist) {
@@ -276,13 +284,18 @@ export class AutorecManager {
 
         const cleanEntry: AutorecEntry = {
             id: effectiveId,
-            name: entry.name ? entry.name : (rawPattern ? rawPattern.slice(0, 48) : (targetType === 'override' ? 'New Override' : 'New Template')),
+            name: entry.name
+                ? entry.name
+                : (rawPattern
+                    ? rawPattern.slice(0, 48)
+                    : (targetType === 'override' ? 'New Override' : (targetType === 'llm' ? 'LLM Generated' : 'New Template'))),
             type: targetType,
             pattern: rawPattern,
             sequence: Array.isArray(entry.sequence) ? entry.sequence : [],
             enabled: entry.enabled !== false,
             sourceModule: entry.sourceModule ?? 'world',
-            version: entry.version ?? '1.0.0'
+            version: entry.version ?? '1.0.0',
+            llmMetadata: targetType === 'llm' ? entry.llmMetadata : undefined
         };
         this._entries.set(cleanEntry.id, cleanEntry);
         if (persist) {
@@ -314,7 +327,7 @@ export class AutorecManager {
     }
 
     /**
-     * Looks up an existing AutorecEntry matching the actor/item override or abstracted template.
+     * Looks up an existing AutorecEntry matching the actor/item override, abstracted template, or unreviewed LLM entry.
      * Does not run new parsing or LLM queries.
      */
     lookup(actor: Actor, item: Item, description: string): AutorecLookupResult | null {
@@ -356,15 +369,33 @@ export class AutorecManager {
             }
         }
 
+        // 3. Check unreviewed LLM Generated entries so they execute immediately while awaiting GM review
+        for (const entry of this._entries.values()) {
+            if (!entry.enabled || entry.type !== 'llm') continue;
+            const entryOverrideKey = entry.llmMetadata?.overrideKey?.toLowerCase();
+            if (entryOverrideKey === overrideKey || this._normalizePatternKey(entry.pattern) === normTemplate) {
+                const hydrated = hydrateMultiattackSequence(entry.sequence, itemMap);
+                return {
+                    sequence: hydrated,
+                    source: 'llm',
+                    entry,
+                    template,
+                    itemMap
+                };
+            }
+        }
+
         return null;
     }
 
     /**
      * Resolves the concrete 3D MultiattackSequence for an actor and item.
-     * 1. Checks central Autorec overrides & templates.
+     * 1. Checks central Autorec overrides, templates & LLM entries.
      * 2. If not found, runs deterministic template parser.
      * 3. If deterministic fails and LLM fallback is enabled, queries LLM.
-     * 4. Newly gathered templates are automatically stored in the central Autorecognition Menu (never in actor/item flags).
+     * 4. Newly gathered entries are automatically stored centrally:
+     *    - Deterministic entries -> 'template' section
+     *    - LLM fallback entries -> 'llm' (LLM Generated) section for GM review & approval
      */
     async resolveOrGather(actor: Actor, item: Item, description: string): Promise<AutorecLookupResult | null> {
         // 1. Central lookup
@@ -375,6 +406,7 @@ export class AutorecManager {
         }
 
         const actorName = actor?.name?.trim() ?? '';
+        const itemName = item?.name?.trim() ?? 'Multiattack';
         const actorItems = adapter.getActorItems(actor);
         const { template, itemMap } = abstractMultiattackDescription(description, actorItems, actorName);
         if (!template) return null;
@@ -398,16 +430,28 @@ export class AutorecManager {
             return null;
         }
 
-        // 4. Automatically register the newly gathered template in the central Autorecognition Manager!
+        // 4. Automatically register the newly gathered entry in the central Autorecognition Manager!
+        // When generated via LLM fallback, store in the 'llm' (LLM Generated) section for review & approval.
+        const isLlm = source === 'llm';
         const newEntry = await this.registerEntry({
             id: `gathered-${adapter.randomID(8)}`,
-            name: `Auto-Gathered (${actorName || 'Template'})`,
-            type: 'template',
+            name: isLlm ? `${actorName || 'Monster'} (LLM Generated)` : `Auto-Gathered (${actorName || 'Template'})`,
+            type: isLlm ? 'llm' : 'template',
             pattern: template,
             sequence: rawTemplateSequence,
             enabled: true,
             sourceModule: source,
-            version: '1.0.0'
+            version: '1.0.0',
+            llmMetadata: isLlm
+                ? {
+                      actorName: actorName || 'Monster',
+                      itemName,
+                      overrideKey: `${actorName || 'Monster'}::${itemName}`,
+                      templatePattern: template,
+                      rawDescription: description,
+                      itemMap
+                  }
+                : undefined
         });
 
         const hydrated = hydrateMultiattackSequence(rawTemplateSequence, itemMap);

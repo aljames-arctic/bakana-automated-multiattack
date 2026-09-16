@@ -213,14 +213,109 @@ test('Dropping a monster whose general template exists defaults to Monster Overr
         assert.equal(twoSameAfter.type, 'template');
         assert.equal(twoSameAfter.pattern, '<ACTOR> makes two <ITEM_0> attacks.');
 
-        // Verify sidebar renders both Templates and Monster Overrides sections
+        // Verify sidebar renders Templates, Monster Overrides, and LLM Generated sections
         const renderedDom = await menuApp._renderHTML({}, {});
         assert.ok(renderedDom.innerHTML.includes('Templates'), 'Sidebar should render Templates section');
         assert.ok(renderedDom.innerHTML.includes('Monster Overrides'), 'Sidebar should render Monster Overrides section');
+        assert.ok(renderedDom.innerHTML.includes('LLM Generated'), 'Sidebar should render LLM Generated section');
     } finally {
         globalThis.document = origDoc;
     }
 });
+
+import { llmClient } from '../../src/multiattack/llm-client.js';
+
+test('LLM fallback stores output in LLM Generated section and supports one-click approval into Templates or Monster Overrides', async () => {
+    await autorecManager.resetToDefaults(false);
+    const origDoc = globalThis.document;
+    globalThis.document = createMockDOM();
+
+    const origQuery = llmClient.queryMultiattackTemplate;
+    let llmCallCount = 0;
+    llmClient.queryMultiattackTemplate = async () => {
+        llmCallCount++;
+        return [[['<ITEM_0>', '<ITEM_1>']]];
+    };
+
+    const origGetSetting = globalThis.game.settings.get;
+    globalThis.game.settings.get = (mod, key) => {
+        if (key === 'enableLlmFallback') return true;
+        return origGetSetting ? origGetSetting(mod, key) : undefined;
+    };
+
+    const weirdMonster = {
+        id: 'weird-monster',
+        name: 'Chronos Beast',
+        items: new Map([
+            ['ma-item', {
+                id: 'ma-item',
+                name: 'Multiattack',
+                system: {
+                    description: {
+                        // A non-standard phrasing that deterministic parser returns null for
+                        value: 'Whenever the Chronos Beast initiates combat sequence alpha, execute Temporal Fang combined with Void Claw.'
+                    }
+                }
+            }],
+            ['fang-item', { id: 'fang-item', name: 'Temporal Fang', system: { actionType: 'mwak' } }],
+            ['claw-item', { id: 'claw-item', name: 'Void Claw', system: { actionType: 'mwak' } }]
+        ])
+    };
+
+    try {
+        // 1. Trigger resolveOrGather which falls back to LLM
+        const maItem = weirdMonster.items.get('ma-item');
+        const gathered = await autorecManager.resolveOrGather(
+            weirdMonster,
+            maItem,
+            maItem.system.description.value
+        );
+        assert.ok(gathered, 'resolveOrGather should succeed via LLM fallback');
+        assert.equal(gathered.source, 'llm', 'Source should be llm');
+        assert.equal(gathered.entry.type, 'llm', 'Entry should be stored in the llm (LLM Generated) category');
+        assert.ok(gathered.entry.llmMetadata, 'Entry should retain llmMetadata for review');
+        assert.equal(gathered.entry.llmMetadata.actorName, 'Chronos Beast');
+        assert.equal(gathered.entry.llmMetadata.overrideKey, 'Chronos Beast::Multiattack');
+        assert.deepEqual(gathered.sequence, [[['Temporal Fang', 'Void Claw']]], 'Should hydrate concrete weapons for immediate combat execution');
+        assert.equal(llmCallCount, 1);
+
+        // 2. Subsequent lookup should match the unreviewed LLM entry immediately without re-querying LLM
+        const secondLookup = autorecManager.lookup(weirdMonster, maItem, maItem.system.description.value);
+        assert.ok(secondLookup, 'lookup should match unreviewed llm entry');
+        assert.equal(secondLookup.source, 'llm');
+        assert.deepEqual(secondLookup.sequence, [[['Temporal Fang', 'Void Claw']]]);
+        assert.equal(llmCallCount, 1, 'Should NOT call LLM again');
+
+        // 3. Render AutorecMenuApplication with the LLM Generated entry selected
+        const menuApp = new AutorecMenuApplication();
+        menuApp._selectedId = gathered.entry.id;
+        const renderedDom = await menuApp._renderHTML({}, {});
+        assert.ok(renderedDom.innerHTML.includes('LLM Generated Entry — Pending Approval'), 'Should display review & approval banner');
+        assert.ok(renderedDom.innerHTML.includes('Approve as Generic Template'), 'Should render Approve as Generic Template button');
+        assert.ok(renderedDom.innerHTML.includes('Approve as Monster Override'), 'Should render Approve as Monster Override button');
+
+        // 4. Approve as Monster Override -> should promote entry to 'override' with concrete hydrated sequence
+        const promotedOverride = await autorecManager.registerEntry({
+            id: gathered.entry.id,
+            name: 'Chronos Beast Override',
+            type: 'override',
+            pattern: gathered.entry.llmMetadata.overrideKey,
+            sequence: [[['Temporal Fang', 'Void Claw']]],
+            enabled: true
+        }, false);
+
+        assert.equal(promotedOverride.type, 'override', 'Promoted entry should have type override');
+        assert.equal(promotedOverride.llmMetadata, undefined, 'llmMetadata should be cleared upon approval');
+
+        const remainingLlm = autorecManager.getAllEntries().filter((e) => e.type === 'llm');
+        assert.equal(remainingLlm.length, 0, 'LLM Generated section should now be empty after approval');
+    } finally {
+        llmClient.queryMultiattackTemplate = origQuery;
+        globalThis.game.settings.get = origGetSetting;
+        globalThis.document = origDoc;
+    }
+});
+
 
 
 
