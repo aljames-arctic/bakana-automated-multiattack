@@ -146,7 +146,7 @@ export class AutorecMenuApplication extends BaseApp {
     private _droppedActor: DroppedActorInfo | null = null;
     private _pendingName: string | null = null;
     private _pendingPattern: string | null = null;
-    private _pendingType: 'template' | 'override' | null = null;
+    private _pendingType: 'template' | 'override' | 'llm' | null = null;
 
     static DEFAULT_OPTIONS = {
         id: 'bam-autorec-menu',
@@ -166,7 +166,8 @@ export class AutorecMenuApplication extends BaseApp {
     /**
      * Reads a dropped Actor document, extracts its Multiattack item & weapons, resolves 2024 enrichers,
      * builds both abstract template and concrete sequences, and populates the editor.
-     * If the currently selected entry is already filled, creates a new entry first to prevent overwriting.
+     * If deterministic parsing fails and LLM fallback is enabled, queries the LLM and stores the result
+     * in the LLM Generated section for review and approval.
      */
     async handleActorDrop(actor: Actor, requestedMode?: 'template' | 'override'): Promise<boolean> {
         if (!actor) return false;
@@ -184,7 +185,44 @@ export class AutorecMenuApplication extends BaseApp {
         }
 
         const { template, itemMap } = abstractMultiattackDescription(rawDescription, items, actor.name);
-        const parsedTemplateSeq = parseMultiattackTemplate(template);
+        let parsedTemplateSeq = parseMultiattackTemplate(template);
+
+        // If deterministic parser could not parse it and LLM fallback is enabled, query LLM and store in LLM Generated section
+        if (!parsedTemplateSeq && Boolean(game.settings?.get(MODULE_ID, 'enableLlmFallback'))) {
+            const llmSeq = await llmClient.queryMultiattackTemplate(template);
+            if (llmSeq) {
+                const actorName = actor.name ?? 'Monster';
+                const itemName = maItem.name ?? 'Multiattack';
+                const llmEntry = await autorecManager.registerEntry({
+                    id: '',
+                    name: `${actorName} (LLM Generated)`,
+                    type: 'llm',
+                    pattern: template,
+                    sequence: llmSeq,
+                    enabled: true,
+                    sourceModule: 'llm',
+                    llmMetadata: {
+                        actorName,
+                        itemName,
+                        overrideKey: `${actorName}::${itemName}`,
+                        templatePattern: template,
+                        rawDescription,
+                        itemMap
+                    }
+                });
+                this._selectedId = llmEntry.id;
+                this._droppedActor = null;
+                this._pendingName = llmEntry.name;
+                this._pendingPattern = llmEntry.pattern;
+                this._pendingType = 'llm';
+                this._workingSequence = JSON.parse(JSON.stringify(llmSeq));
+                notify.info(`Generated Multiattack sequence via LLM for "${actorName}"! Review and approve it in the LLM Generated section.`);
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                (this as any).render?.();
+                return true;
+            }
+        }
+
         const templateSequence: MultiattackSequence = parsedTemplateSeq ?? [[['<ITEM_0>']]];
 
         const concreteSequence: MultiattackSequence = templateSequence.map((section) =>
@@ -334,8 +372,9 @@ export class AutorecMenuApplication extends BaseApp {
         const container = document.createElement('div');
         container.className = 'bam-autorec-container';
 
-        const templateEntries = entries.filter((e) => e.type !== 'override');
+        const templateEntries = entries.filter((e) => e.type === 'template');
         const overrideEntries = entries.filter((e) => e.type === 'override');
+        const llmEntries = entries.filter((e) => e.type === 'llm');
 
         const renderSidebarItem = (e: AutorecEntry): string => `
             <div class="bam-sidebar-item ${e.id === selected?.id ? 'active' : ''}" data-entry-id="${e.id}">
@@ -362,6 +401,15 @@ export class AutorecMenuApplication extends BaseApp {
                     ? overrideEntries.map(renderSidebarItem).join('')
                     : `<div style="padding: 8px 12px; font-size: 0.75rem; color: #64748b; font-style: italic;">No monster overrides</div>`}
             </div>
+            <div class="bam-sidebar-section" style="margin-top: 6px;">
+                <div class="bam-sidebar-section-header" style="padding: 8px 10px 6px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #fbbf24; background: rgba(30, 36, 54, 0.85); border-top: 1px solid #334155; border-bottom: 1px solid #334155; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 1;">
+                    <span><i class="fas fa-robot" style="margin-right: 6px;"></i> LLM Generated</span>
+                    <span style="background: #78350f; color: #fde68a; padding: 1px 6px; border-radius: 10px; font-size: 0.68rem;">${llmEntries.length}</span>
+                </div>
+                ${llmEntries.length > 0
+                    ? llmEntries.map(renderSidebarItem).join('')
+                    : `<div style="padding: 8px 12px; font-size: 0.75rem; color: #64748b; font-style: italic;">No LLM generated entries</div>`}
+            </div>
         `;
 
         const displayName = this._pendingName ?? selected?.name ?? '';
@@ -371,8 +419,9 @@ export class AutorecMenuApplication extends BaseApp {
         const seq = this._workingSequence && this._workingSequence.length > 0 ? this._workingSequence : [[['<ITEM_0>']]];
         const summaryHtml = summarizeSequenceInPlainEnglish(seq);
 
+        const itemMapForChoices = this._droppedActor?.itemMap ?? selected?.llmMetadata?.itemMap;
         const activeChoices = STANDARD_TOKEN_CHOICES.map((c) => {
-            const mappedWeapon = this._droppedActor?.itemMap[c.value.toUpperCase()];
+            const mappedWeapon = itemMapForChoices?.[c.value.toUpperCase()];
             return {
                 value: c.value,
                 label: mappedWeapon ? `${c.label} — ${mappedWeapon}` : c.label
@@ -513,6 +562,44 @@ export class AutorecMenuApplication extends BaseApp {
             </div>
         ` : '';
 
+        const llmReviewBannerHtml = selected?.type === 'llm' ? `
+            <div class="bam-llm-review-banner" style="background: rgba(99, 102, 241, 0.12); border: 1px solid #818cf8; border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <div style="font-weight: 700; color: #e0e7ff; font-size: 0.9rem; display: flex; align-items: center; gap: 8px;">
+                        <i class="fas fa-robot" style="color: #818cf8;"></i>
+                        <span>LLM Generated Entry — Pending Approval</span>
+                    </div>
+                    <span style="background: rgba(251, 191, 36, 0.2); border: 1px solid #fbbf24; color: #fde68a; font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 10px;">
+                        NEEDS REVIEW
+                    </span>
+                </div>
+                ${selected.llmMetadata?.rawDescription ? `
+                    <div style="font-size: 0.78rem; color: #cbd5e1; font-style: italic; background: rgba(15, 19, 30, 0.5); padding: 6px 8px; border-radius: 4px; border-left: 3px solid #818cf8;">
+                        <b>${selected.llmMetadata.actorName || 'Monster'} (${selected.llmMetadata.itemName || 'Multiattack'}):</b> "${selected.llmMetadata.rawDescription}"
+                    </div>
+                ` : ''}
+                ${selected.llmMetadata?.itemMap && Object.keys(selected.llmMetadata.itemMap).length > 0 ? `
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+                        <span style="font-size: 0.74rem; color: #94a3b8;">Detected Weapons:</span>
+                        ${Object.entries(selected.llmMetadata.itemMap).map(([k, v]) => `
+                            <span class="bam-weapon-mapping-pill"><b style="color:#a5b4fc;">${formatTokenHumanLabel(k)}</b> &rarr; ${v}</span>
+                        `).join('')}
+                    </div>
+                ` : ''}
+                <div style="font-size: 0.78rem; color: #94a3b8;">
+                    Review or refine the sequence below, then approve it to move it into either <b>Templates</b> (reusable for any monster with this sentence structure) or <b>Monster Overrides</b> (specific to ${selected.llmMetadata?.overrideKey ?? 'this monster'}):
+                </div>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button type="button" id="bam-approve-template-btn" class="bam-chat-card-btn" style="flex: 1; background: #4f46e5; border-color: #6366f1;">
+                        <i class="fas fa-scroll"></i> Approve as Generic Template
+                    </button>
+                    <button type="button" id="bam-approve-override-btn" class="bam-chat-card-btn" style="flex: 1; background: #0f766e; border-color: #14b8a6;">
+                        <i class="fas fa-dragon"></i> Approve as Monster Override
+                    </button>
+                </div>
+            </div>
+        ` : '';
+
         let inspectorHtml = '';
         if (!selected) {
             inspectorHtml = `<div style="color: #94a3b8;">No entries found. Click "+ Add Template" to create one.</div>`;
@@ -562,6 +649,7 @@ export class AutorecMenuApplication extends BaseApp {
         } else {
             inspectorHtml = `
                 <div style="display: flex; flex-direction: column; gap: 12px;">
+                    ${llmReviewBannerHtml}
                     ${droppedActorCardHtml}
 
                     <!-- Plain English Summary Banner -->
@@ -1218,6 +1306,105 @@ export class AutorecMenuApplication extends BaseApp {
             (this as any).render?.();
         });
 
+        // Approve LLM Generated entry as Generic Template
+        const approveTemplateBtn = root.querySelector('#bam-approve-template-btn');
+        approveTemplateBtn?.addEventListener('click', async () => {
+            if (!this._selectedId) return;
+            const currentSelf = autorecManager.getAllEntries().find((e) => e.id === this._selectedId);
+            if (!currentSelf) return;
+
+            const nameEl = root.querySelector('#bam-edit-name') as HTMLInputElement | null;
+            const patternEl = root.querySelector('#bam-edit-pattern') as HTMLInputElement | null;
+
+            const rawName = (nameEl?.value ?? currentSelf.name).trim();
+            const cleanName = rawName.replace(/\s*\(LLM Generated\)/i, ' Pattern');
+            const templatePattern = currentSelf.llmMetadata?.templatePattern ?? (patternEl?.value ?? currentSelf.pattern).trim();
+
+            const reverseMap: Record<string, string> = {};
+            for (const [k, v] of Object.entries(currentSelf.llmMetadata?.itemMap ?? {})) {
+                reverseMap[v.toLowerCase()] = k;
+            }
+
+            const baseSeq = this._workingSequence && this._workingSequence.length > 0
+                ? this._workingSequence
+                : currentSelf.sequence;
+
+            const abstractSeq: MultiattackSequence = baseSeq.map((sec) =>
+                sec.map((flow) =>
+                    flow.map((tok) => {
+                        const strict = tok.trim().startsWith('>');
+                        const clean = stripOrderPrefix(tok);
+                        const mapped = reverseMap[clean.toLowerCase()] ?? clean;
+                        return strict ? `>${mapped}` : mapped;
+                    })
+                )
+            );
+
+            const saved = await autorecManager.registerEntry({
+                id: currentSelf.id,
+                name: cleanName,
+                type: 'template',
+                pattern: templatePattern,
+                sequence: abstractSeq,
+                enabled: true,
+                sourceModule: 'world',
+                llmMetadata: undefined
+            });
+            this._selectedId = saved.id;
+            this._pendingName = null;
+            this._pendingPattern = null;
+            this._pendingType = null;
+            this._workingSequence = null;
+            notify.info(`Approved "${saved.name}" as a Generic Template and moved to Templates!`);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (this as any).render?.();
+        });
+
+        // Approve LLM Generated entry as Monster Override
+        const approveOverrideBtn = root.querySelector('#bam-approve-override-btn');
+        approveOverrideBtn?.addEventListener('click', async () => {
+            if (!this._selectedId) return;
+            const currentSelf = autorecManager.getAllEntries().find((e) => e.id === this._selectedId);
+            if (!currentSelf) return;
+
+            const nameEl = root.querySelector('#bam-edit-name') as HTMLInputElement | null;
+            const patternEl = root.querySelector('#bam-edit-pattern') as HTMLInputElement | null;
+
+            const actorName = currentSelf.llmMetadata?.actorName ?? 'Monster';
+            const rawName = (nameEl?.value ?? currentSelf.name).trim();
+            const overrideName = currentSelf.llmMetadata?.actorName
+                ? `${actorName} Override`
+                : rawName.replace(/\s*\(LLM Generated\)/i, ' Override');
+            const overrideKey = currentSelf.llmMetadata?.overrideKey ?? (
+                patternEl?.value?.includes('::') ? patternEl.value.trim() : `${actorName}::Multiattack`
+            );
+
+            const baseSeq = this._workingSequence && this._workingSequence.length > 0
+                ? this._workingSequence
+                : currentSelf.sequence;
+
+            const concreteSeq = hydrateMultiattackSequence(baseSeq, currentSelf.llmMetadata?.itemMap ?? {});
+
+            const saved = await autorecManager.registerEntry({
+                id: currentSelf.id,
+                name: overrideName,
+                type: 'override',
+                pattern: overrideKey,
+                sequence: concreteSeq,
+                enabled: true,
+                sourceModule: 'world',
+                llmMetadata: undefined
+            });
+            this._selectedId = saved.id;
+            this._pendingName = null;
+            this._pendingPattern = null;
+            this._pendingType = null;
+            this._workingSequence = null;
+            notify.info(`Approved "${saved.name}" as a Monster Override and moved to Monster Overrides!`);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (this as any).render?.();
+        });
+
         const saveBtn = root.querySelector('#bam-save-btn');
         saveBtn?.addEventListener('click', async () => {
             if (!this._selectedId) return;
@@ -1233,11 +1420,11 @@ export class AutorecMenuApplication extends BaseApp {
             }
 
             const currentSelf = autorecManager.getAllEntries().find((e) => e.id === this._selectedId);
-            const entryType: 'override' | 'template' = this._pendingType ?? (rawPattern.includes('::') ? 'override' : (currentSelf?.type ?? 'template'));
+            const entryType: 'override' | 'template' | 'llm' = this._pendingType ?? (rawPattern.includes('::') ? 'override' : (currentSelf?.type ?? 'template'));
 
             const existingDuplicate = autorecManager.findDuplicatePattern(rawPattern, this._selectedId, entryType);
             if (existingDuplicate) {
-                notify.warn(`Pattern already exists in ${entryType === 'override' ? 'Monster Overrides' : 'Templates'} under "${existingDuplicate.name}". Switched to existing entry.`);
+                notify.warn(`Pattern already exists in ${entryType === 'override' ? 'Monster Overrides' : (entryType === 'llm' ? 'LLM Generated' : 'Templates')} under "${existingDuplicate.name}". Switched to existing entry.`);
                 if (currentSelf && !currentSelf.pattern.trim()) {
                     await autorecManager.deleteEntry(this._selectedId, false);
                 }
@@ -1262,7 +1449,8 @@ export class AutorecMenuApplication extends BaseApp {
                     type: entryType,
                     pattern: rawPattern,
                     sequence: parsedSeq,
-                    enabled: true
+                    enabled: true,
+                    llmMetadata: entryType === 'llm' ? currentSelf?.llmMetadata : undefined
                 });
                 this._selectedId = saved.id;
                 this._droppedActor = null;
