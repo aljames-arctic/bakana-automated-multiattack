@@ -176,7 +176,7 @@ export class AutorecManager {
         const list = Array.isArray(rawSaved) ? rawSaved : Object.values(rawSaved);
 
         for (const entry of list) {
-            if (entry && entry.id && entry.pattern && Array.isArray(entry.sequence)) {
+            if (entry && entry.id && typeof entry.pattern === 'string' && Array.isArray(entry.sequence)) {
                 this._entries.set(entry.id, {
                     ...entry,
                     enabled: entry.enabled !== false
@@ -216,12 +216,13 @@ export class AutorecManager {
      * @param {boolean} [persist=true] Whether to persist to world settings immediately
      */
     async registerEntry(entry: AutorecEntry, persist: boolean = true): Promise<AutorecEntry> {
+        const rawPattern = (entry.pattern ?? '').trim();
         const cleanEntry: AutorecEntry = {
             id: entry.id || `bam-${adapter.randomID(8)}`,
-            name: entry.name || entry.pattern.slice(0, 48),
+            name: entry.name || (rawPattern ? rawPattern.slice(0, 48) : 'New Template'),
             type: entry.type === 'override' ? 'override' : 'template',
-            pattern: entry.pattern.trim(),
-            sequence: entry.sequence,
+            pattern: rawPattern,
+            sequence: Array.isArray(entry.sequence) ? entry.sequence : [],
             enabled: entry.enabled !== false,
             sourceModule: entry.sourceModule ?? 'world',
             version: entry.version ?? '1.0.0'
