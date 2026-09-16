@@ -192,9 +192,40 @@ export class AutorecMenuApplication extends BaseApp {
             )
         );
 
+        const targetPattern = mode === 'override' ? `${actor.name}::${maItem.name}` : template;
+        const existingMatch = autorecManager.findDuplicatePattern(targetPattern, this._selectedId ?? undefined);
+        const existingSelected = autorecManager.getAllEntries().find((e) => e.id === this._selectedId);
+
+        if (existingMatch) {
+            if (existingSelected && !existingSelected.pattern.trim() && existingSelected.id !== existingMatch.id) {
+                await autorecManager.deleteEntry(existingSelected.id, false);
+            }
+            this._selectedId = existingMatch.id;
+            this._droppedActor = {
+                actorName: actor.name ?? 'Monster',
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                actorImg: (actor as any).img ?? 'icons/svg/mystery-man.svg',
+                itemName: maItem.name ?? 'Multiattack',
+                rawDescription,
+                templateText: template,
+                overrideKey: `${actor.name}::${maItem.name}`,
+                itemMap,
+                templateSequence,
+                concreteSequence,
+                mode
+            };
+            this._pendingName = existingMatch.name;
+            this._pendingPattern = existingMatch.pattern;
+            this._pendingType = existingMatch.type;
+            this._workingSequence = JSON.parse(JSON.stringify(existingMatch.sequence));
+            notify.info(`"${actor.name}" already matches existing pattern "${existingMatch.name}"! Switched to existing entry.`);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (this as any).render?.();
+            return true;
+        }
+
         // If no entry is selected OR the selected entry is already filled (and not already in droppedActor mode),
         // create a brand-new entry so existing filled templates are never overwritten.
-        const existingSelected = autorecManager.getAllEntries().find((e) => e.id === this._selectedId);
         const isExistingFilled = Boolean(existingSelected && existingSelected.pattern.trim().length > 0 && !this._droppedActor);
 
         if (!this._selectedId || isExistingFilled) {
@@ -942,16 +973,40 @@ export class AutorecMenuApplication extends BaseApp {
             const seqEl = root.querySelector('#bam-edit-sequence') as HTMLTextAreaElement | null;
             if (!nameEl || !patternEl) return;
 
+            const rawPattern = patternEl.value.trim();
+            if (!rawPattern) {
+                notify.warn('Pattern / Key cannot be empty.');
+                return;
+            }
+
+            const existingDuplicate = autorecManager.findDuplicatePattern(rawPattern, this._selectedId);
+            if (existingDuplicate) {
+                notify.warn(`Pattern already exists under "${existingDuplicate.name}". Switched to existing entry.`);
+                const currentSelf = autorecManager.getAllEntries().find((e) => e.id === this._selectedId);
+                if (currentSelf && !currentSelf.pattern.trim()) {
+                    await autorecManager.deleteEntry(this._selectedId, false);
+                }
+                this._selectedId = existingDuplicate.id;
+                this._droppedActor = null;
+                this._pendingName = null;
+                this._pendingPattern = null;
+                this._pendingType = null;
+                this._workingSequence = null;
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                (this as any).render?.();
+                return;
+            }
+
             try {
                 const parsedSeq = this._workingSequence && this._workingSequence.length > 0
                     ? this._workingSequence
                     : (seqEl ? JSON.parse(seqEl.value) : [[['<ITEM_0>']]]);
-                const entryType = this._pendingType ?? (patternEl.value.includes('::') ? 'override' : 'template');
+                const entryType = this._pendingType ?? (rawPattern.includes('::') ? 'override' : 'template');
                 await autorecManager.registerEntry({
                     id: this._selectedId,
                     name: nameEl.value.trim(),
                     type: entryType,
-                    pattern: patternEl.value.trim(),
+                    pattern: rawPattern,
                     sequence: parsedSeq,
                     enabled: true
                 });

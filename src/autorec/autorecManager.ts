@@ -211,15 +211,56 @@ export class AutorecManager {
     }
 
     /**
+     * Finds an existing AutorecEntry with the same normalized pattern (optionally excluding a specific entry ID).
+     */
+    findDuplicatePattern(pattern: string, excludeId?: string): AutorecEntry | null {
+        const clean = this._normalizePatternKey(pattern ?? '');
+        if (!clean) return null;
+        for (const entry of this._entries.values()) {
+            if (excludeId && entry.id === excludeId) continue;
+            if (this._normalizePatternKey(entry.pattern) === clean) {
+                return entry;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Registers or updates an AutorecEntry in the central store.
+     * If a new entry's pattern matches an existing entry, prevents creating a duplicate and updates/returns the existing entry.
      * @param {AutorecEntry} entry Entry to register
      * @param {boolean} [persist=true] Whether to persist to world settings immediately
      */
     async registerEntry(entry: AutorecEntry, persist: boolean = true): Promise<AutorecEntry> {
         const rawPattern = (entry.pattern ?? '').trim();
+
+        if (rawPattern) {
+            const dup = this.findDuplicatePattern(rawPattern, entry.id);
+            if (dup) {
+                // If entry.id was a temporary unfilled entry, delete the temporary unfilled entry
+                if (entry.id && entry.id !== dup.id) {
+                    const existingSelf = this._entries.get(entry.id);
+                    if (!existingSelf || !existingSelf.pattern.trim()) {
+                        this._entries.delete(entry.id);
+                    }
+                }
+                const updatedDup: AutorecEntry = {
+                    ...dup,
+                    name: entry.name ? entry.name : dup.name,
+                    sequence: Array.isArray(entry.sequence) && entry.sequence.length > 0 ? entry.sequence : dup.sequence,
+                    enabled: entry.enabled !== false
+                };
+                this._entries.set(dup.id, updatedDup);
+                if (persist) {
+                    await this.saveToSettings();
+                }
+                return updatedDup;
+            }
+        }
+
         const cleanEntry: AutorecEntry = {
-            id: entry.id || `bam-${adapter.randomID(8)}`,
-            name: entry.name || (rawPattern ? rawPattern.slice(0, 48) : 'New Template'),
+            id: entry.id ? entry.id : `bam-${adapter.randomID(8)}`,
+            name: entry.name ? entry.name : (rawPattern ? rawPattern.slice(0, 48) : 'New Template'),
             type: entry.type === 'override' ? 'override' : 'template',
             pattern: rawPattern,
             sequence: Array.isArray(entry.sequence) ? entry.sequence : [],
@@ -249,7 +290,11 @@ export class AutorecManager {
      * Normalizes a pattern string for case-insensitive comparison.
      */
     private _normalizePatternKey(pattern: string): string {
-        return pattern.trim().toLowerCase().replace(/\s+/g, ' ');
+        return pattern
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, ' ')
+            .replace(/^the\s+<actor>(?=[\s,.]|$)/, '<actor>');
     }
 
     /**

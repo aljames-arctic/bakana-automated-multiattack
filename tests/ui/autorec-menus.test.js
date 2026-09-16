@@ -129,4 +129,69 @@ test('Drag & Drop Actor auto-fill resolves Actor from drop payload and extracts 
     }
 });
 
+test('handleActorDrop detects existing matching pattern, switches selection to existing entry, and deletes temporary unfilled template', async () => {
+    await autorecManager.resetToDefaults(false);
+    const origDoc = globalThis.document;
+    globalThis.document = createMockDOM();
+
+    // First register a known pattern
+    const existingEntry = await autorecManager.registerEntry({
+        id: 'existing-archmage-pattern',
+        name: 'Four Attacks Template',
+        type: 'template',
+        pattern: 'the <actor> makes four <item_0> attacks.',
+        sequence: [[['<ITEM_0>', '<ITEM_0>', '<ITEM_0>', '<ITEM_0>']]],
+        enabled: true
+    }, false);
+
+    // Create a temporary unfilled template like "+ Add Template" does
+    const tempUnfilled = await autorecManager.registerEntry({
+        id: 'temp-unfilled-drop',
+        name: 'New Template',
+        type: 'template',
+        pattern: '',
+        sequence: [],
+        enabled: true
+    }, false);
+
+    const archmageActor = {
+        id: 'archmage-dup',
+        name: 'Archmage',
+        img: 'icons/creatures/magical/humanoid-silhouette-glowing-pink.webp',
+        items: new Map([
+            ['ma-item', {
+                id: 'ma-item',
+                name: 'Multiattack',
+                system: {
+                    description: {
+                        value: 'The Archmage makes four Arcane Burst attacks.'
+                    }
+                }
+            }],
+            ['ab-item', {
+                id: 'ab-item',
+                name: 'Arcane Burst',
+                system: { actionType: 'msak' }
+            }]
+        ])
+    };
+
+    try {
+        const menuApp = new AutorecMenuApplication();
+        menuApp._selectedId = tempUnfilled.id;
+
+        const handled = await menuApp.handleActorDrop(archmageActor, 'template');
+        assert.equal(handled, true, 'handleActorDrop should return true');
+        assert.equal(menuApp._selectedId, existingEntry.id, 'Should switch _selectedId to the existing matching entry');
+        assert.equal(
+            autorecManager.getAllEntries().some((e) => e.id === tempUnfilled.id),
+            false,
+            'Should delete the temporary unfilled template so no duplicate or orphan remains'
+        );
+    } finally {
+        globalThis.document = origDoc;
+    }
+});
+
+
 

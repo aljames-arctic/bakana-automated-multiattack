@@ -84,3 +84,58 @@ test('deleteEntry permanently removes both default templates and custom entries 
     );
 });
 
+test('findDuplicatePattern detects existing patterns and registerEntry deduplicates against existing entries', async () => {
+    await autorecManager.resetToDefaults(false);
+
+    const existing = await autorecManager.registerEntry({
+        id: 'dup-test-1',
+        name: 'First Entry',
+        type: 'template',
+        pattern: 'the <actor> makes two <item_0> attacks.',
+        sequence: [[['<ITEM_0>', '<ITEM_0>']]],
+        enabled: true
+    }, false);
+
+    // Case-insensitive and whitespace-normalized match
+    const found = autorecManager.findDuplicatePattern('  THE <actor> MAKES TWO <ITEM_0> ATTACKS.  ');
+    assert.ok(found, 'Should detect duplicate pattern ignoring case and extra whitespace');
+    assert.equal(found.id, existing.id);
+
+    // Excluding self should return null
+    const excluded = autorecManager.findDuplicatePattern('the <actor> makes two <item_0> attacks.', existing.id);
+    assert.equal(excluded, null, 'Excluding self ID should return null');
+
+    // Empty pattern should never match anything
+    assert.equal(autorecManager.findDuplicatePattern('   '), null, 'Empty pattern should return null');
+
+    // Registering a temporary unfilled entry first, then updating it with the duplicate pattern
+    await autorecManager.registerEntry({
+        id: 'temp-unfilled',
+        name: 'New Template',
+        type: 'template',
+        pattern: '',
+        sequence: [],
+        enabled: true
+    }, false);
+
+    const countBefore = autorecManager.getAllEntries().length;
+
+    const merged = await autorecManager.registerEntry({
+        id: 'temp-unfilled',
+        name: 'Updated Name',
+        type: 'template',
+        pattern: 'the <actor> makes two <item_0> attacks.',
+        sequence: [[['<ITEM_0>', '<ITEM_0>']]],
+        enabled: true
+    }, false);
+
+    assert.equal(merged.id, existing.id, 'Should update and return existing entry ID');
+    assert.equal(
+        autorecManager.getAllEntries().some((e) => e.id === 'temp-unfilled'),
+        false,
+        'Temporary unfilled entry should be cleaned up when merged into existing pattern'
+    );
+    assert.equal(autorecManager.getAllEntries().length, countBefore - 1, 'Total entries should not contain duplicate');
+});
+
+
