@@ -4,6 +4,7 @@ import { localize, deepFreeze } from './lib/utils.js';
 import { autorecManager, SYSTEM_DEFAULT_TEMPLATES } from './autorec/autorecManager.js';
 import { AutorecMenuApplication } from './autorec/autorecMenu.js';
 import { AutorecExchangeMenuApplication } from './autorec/autorecExchangeMenu.js';
+import { AutomatedSupportMenuApplication } from './autorec/automatedSupportMenu.js';
 
 const USER_SETTING_KEYS = deepFreeze([
     'autoSelectSingleOption',
@@ -15,13 +16,9 @@ const SETTINGS_SECTIONS = deepFreeze([
         keys: [
             'autorecMenu',
             'autorecExchangeMenu',
+            'automatedSupportMenu',
             'autoTriggerOnUse',
-            'showChatCardButton',
-            'enableLlmFallback',
-            'llmProvider',
-            'llmApiKey',
-            'llmModel',
-            'llmEndpoint'
+            'showChatCardButton'
         ],
         scope: 'world',
         titleKey: 'BAM.settingsSections.world',
@@ -97,6 +94,17 @@ export function registerModuleSettings(): void {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
 
+    game.settings.registerMenu(MODULE_ID, 'automatedSupportMenu', {
+        name: 'BAM.settings.automatedSupportMenu.name',
+        label: 'BAM.settings.automatedSupportMenu.label',
+        hint: 'BAM.settings.automatedSupportMenu.hint',
+        icon: 'fa-solid fa-robot',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        type: AutomatedSupportMenuApplication as any,
+        restricted: true
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
     const defaultEntriesRecord: Record<string, unknown> = {};
     for (const entry of SYSTEM_DEFAULT_TEMPLATES) {
         defaultEntriesRecord[entry.id] = entry;
@@ -139,7 +147,7 @@ export function registerModuleSettings(): void {
         name: 'BAM.settings.enableLlmFallback.name',
         hint: 'BAM.settings.enableLlmFallback.hint',
         scope: 'world',
-        config: true,
+        config: false,
         type: Boolean,
         default: false
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -149,7 +157,7 @@ export function registerModuleSettings(): void {
         name: 'BAM.settings.llmProvider.name',
         hint: 'BAM.settings.llmProvider.hint',
         scope: 'world',
-        config: true,
+        config: false,
         type: String,
         choices: {
             openai: 'BAM.settings.llmProvider.choices.openai',
@@ -165,7 +173,7 @@ export function registerModuleSettings(): void {
         name: 'BAM.settings.llmApiKey.name',
         hint: 'BAM.settings.llmApiKey.hint',
         scope: 'world',
-        config: true,
+        config: false,
         type: String,
         default: ''
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -175,7 +183,7 @@ export function registerModuleSettings(): void {
         name: 'BAM.settings.llmModel.name',
         hint: 'BAM.settings.llmModel.hint',
         scope: 'world',
-        config: true,
+        config: false,
         type: String,
         default: 'gpt-4o-mini'
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -185,7 +193,7 @@ export function registerModuleSettings(): void {
         name: 'BAM.settings.llmEndpoint.name',
         hint: 'BAM.settings.llmEndpoint.hint',
         scope: 'world',
-        config: true,
+        config: false,
         type: String,
         default: ''
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

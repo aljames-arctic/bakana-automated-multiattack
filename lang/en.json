@@ -46,6 +46,11 @@
         "label": "Import / Export JSON",
         "hint": "Import or export central multiattack autorecognition configurations as JSON."
       },
+      "automatedSupportMenu": {
+        "name": "Automated Support (LLM) Configuration",
+        "label": "Configure Automated Support",
+        "hint": "Configure optional AI / LLM fallback parsing and sequence repair agent settings."
+      },
       "autoTriggerOnUse": {
         "name": "Auto-Trigger on Multiattack Activity Use",
         "hint": "Automatically initiate the multiattack sequence via dnd5e.postUseActivity when a Multiattack feature is used."

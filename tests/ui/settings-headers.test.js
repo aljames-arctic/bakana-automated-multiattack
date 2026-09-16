@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import '../setup.js';
-import { injectSettingsHeaders } from '../../src/settings.js';
+import { injectSettingsHeaders, registerModuleSettings } from '../../src/settings.js';
 import { MODULE_ID } from '../../src/constants.js';
 
 class MockElement {
@@ -145,3 +145,41 @@ test('injectSettingsHeaders inserts world, user, and client headers into BAM Set
         }
     }
 });
+
+test('registerModuleSettings registers automatedSupportMenu submenu and hides raw LLM settings from main module config list', () => {
+    const registeredSettings = new Map();
+    const registeredMenus = new Map();
+    const origRegister = globalThis.game.settings.register;
+    const origRegisterMenu = globalThis.game.settings.registerMenu;
+
+    globalThis.game.settings.register = (modId, key, data) => {
+        registeredSettings.set(`${modId}.${key}`, data);
+        return origRegister(modId, key, data);
+    };
+    globalThis.game.settings.registerMenu = (modId, key, data) => {
+        registeredMenus.set(`${modId}.${key}`, data);
+        return origRegisterMenu(modId, key, data);
+    };
+
+    try {
+        registerModuleSettings();
+
+        // Verify automatedSupportMenu submenu is registered
+        const supportMenu = registeredMenus.get(`${MODULE_ID}.automatedSupportMenu`);
+        assert.ok(supportMenu, 'automatedSupportMenu should be registered via registerMenu');
+        assert.equal(supportMenu.name, 'BAM.settings.automatedSupportMenu.name');
+        assert.equal(supportMenu.restricted, true);
+
+        // Verify LLM settings have config: false
+        const llmKeys = ['enableLlmFallback', 'llmProvider', 'llmApiKey', 'llmModel', 'llmEndpoint'];
+        for (const key of llmKeys) {
+            const settingData = registeredSettings.get(`${MODULE_ID}.${key}`);
+            assert.ok(settingData, `${key} should be registered`);
+            assert.equal(settingData.config, false, `${key} should have config: false so it is hidden inside the submenu`);
+        }
+    } finally {
+        globalThis.game.settings.register = origRegister;
+        globalThis.game.settings.registerMenu = origRegisterMenu;
+    }
+});
+

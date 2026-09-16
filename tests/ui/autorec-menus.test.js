@@ -9,6 +9,7 @@ import {
     summarizeSequenceInPlainEnglish
 } from '../../src/autorec/autorecMenu.js';
 import { AutorecExchangeMenuApplication } from '../../src/autorec/autorecExchangeMenu.js';
+import { AutomatedSupportMenuApplication } from '../../src/autorec/automatedSupportMenu.js';
 import { autorecManager } from '../../src/autorec/autorecManager.js';
 
 function createMockDOM() {
@@ -30,7 +31,7 @@ function createMockDOM() {
     };
 }
 
-test('AutorecMenuApplication and AutorecExchangeMenuApplication implement both _renderHTML and _replaceHTML and render cleanly', async () => {
+test('AutorecMenuApplication, AutorecExchangeMenuApplication, and AutomatedSupportMenuApplication implement both _renderHTML and _replaceHTML and render cleanly', async () => {
     await autorecManager.resetToDefaults(false);
     const origDoc = globalThis.document;
     globalThis.document = createMockDOM();
@@ -43,6 +44,13 @@ test('AutorecMenuApplication and AutorecExchangeMenuApplication implement both _
         const exchangeApp = new AutorecExchangeMenuApplication();
         const renderedExchange = await exchangeApp.render({ force: true });
         assert.ok(renderedExchange, 'AutorecExchangeMenuApplication should render without throwing');
+
+        const supportApp = new AutomatedSupportMenuApplication();
+        const renderedSupport = await supportApp.render({ force: true });
+        assert.ok(renderedSupport, 'AutomatedSupportMenuApplication should render without throwing');
+        const supportDom = await supportApp._renderHTML({}, {});
+        assert.ok(supportDom.innerHTML.includes('Enable Automated Support (LLM)'), 'Should render LLM enable toggle');
+        assert.ok(supportDom.innerHTML.includes('LLM Provider'), 'Should render LLM Provider dropdown');
     } finally {
         globalThis.document = origDoc;
     }
