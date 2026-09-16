@@ -449,14 +449,14 @@ export class AutorecMenuApplication extends BaseApp {
                     </div>
                 </div>
 
-                <div style="display: flex; gap: 10px;">
-                    <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
                         <label style="font-size: 0.78rem; color: #94a3b8;">Entry Name</label>
-                        <input type="text" id="bam-edit-name" value="${displayName}" style="padding: 6px; background: #1e2436; border: 1px solid #4f46e5; color: #fff; border-radius: 4px;" />
+                        <input type="text" id="bam-edit-name" value="${displayName}" style="width: 100%; padding: 6px 8px; background: #1e2436; border: 1px solid #4f46e5; color: #fff; border-radius: 4px;" />
                     </div>
-                    <div style="flex: 2; display: flex; flex-direction: column; gap: 4px;">
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
                         <label style="font-size: 0.78rem; color: #94a3b8;">Pattern / Key (Abstracted sentence or Actor::Item override)</label>
-                        <input type="text" id="bam-edit-pattern" value="${displayPattern}" style="padding: 6px; background: #1e2436; border: 1px solid #4f46e5; color: #fff; border-radius: 4px; font-family: monospace;" />
+                        <input type="text" id="bam-edit-pattern" value="${displayPattern}" style="width: 100%; padding: 6px 8px; background: #1e2436; border: 1px solid #4f46e5; color: #fff; border-radius: 4px; font-family: monospace;" />
                     </div>
                 </div>
 
