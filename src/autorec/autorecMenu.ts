@@ -1,8 +1,10 @@
+import { MODULE_ID } from '../constants.js';
 import { autorecManager } from './autorecManager.js';
 import { adapter } from '../adapter/index.js';
 import { abstractMultiattackDescription, hydrateMultiattackSequence } from '../multiattack/abstraction.js';
 import { parseMultiattackTemplate } from '../multiattack/parser.js';
 import { stripOrderPrefix } from '../multiattack/executor.js';
+import { llmClient } from '../multiattack/llm-client.js';
 import { localize } from '../lib/utils.js';
 import { notify } from '../lib/logger.js';
 import type { MultiattackSequence, AutorecEntry } from '../types/global.d.js';
@@ -601,6 +603,23 @@ export class AutorecMenuApplication extends BaseApp {
                         ${stepsBuilderHtml}
                     </div>
 
+                    ${Boolean(game.settings?.get(MODULE_ID, 'enableLlmFallback')) ? `
+                        <div class="bam-llm-repair-box" style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.35); border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 0.78rem; font-weight: 700; color: #a5b4fc; display: flex; align-items: center; gap: 6px;">
+                                    <i class="fas fa-robot"></i> Fix / Refine Sequence with LLM Agent
+                                </span>
+                                <span style="font-size: 0.7rem; color: #94a3b8;">Sends schema rules, current JSON, pattern &amp; your feedback</span>
+                            </div>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <input type="text" id="bam-llm-feedback-input" placeholder="Describe what's wrong (e.g. 'Longbow should only roll AFTER the 3 sword attacks, or roll 2 slings instead')" style="flex: 1; padding: 6px 8px; background: #11141d; border: 1px solid #4f46e5; color: #fff; border-radius: 4px; font-size: 0.78rem;" />
+                                <button type="button" id="bam-llm-repair-btn" class="bam-option-btn" style="width: auto; padding: 6px 12px; font-size: 0.76rem; background: rgba(99, 102, 241, 0.25); border-color: #818cf8; color: #fff; white-space: nowrap;">
+                                    <i class="fas fa-wand-magic-sparkles"></i> Ask LLM to Fix
+                                </button>
+                            </div>
+                        </div>
+                    ` : ''}
+
                     <!-- Collapsible Raw JSON for power users -->
                     <details style="margin-top: 4px;">
                         <summary style="cursor: pointer; font-size: 0.76rem; color: #64748b;">
@@ -994,6 +1013,64 @@ export class AutorecMenuApplication extends BaseApp {
             notify.info('Built visual attack sequence from pattern text!');
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (this as any).render?.();
+        });
+
+        // LLM Sequence Repair Agent button & Enter key
+        const llmRepairBtn = root.querySelector('#bam-llm-repair-btn') as HTMLButtonElement | null;
+        const llmFeedbackInput = root.querySelector('#bam-llm-feedback-input') as HTMLInputElement | null;
+
+        const handleLlmRepair = async () => {
+            if (!llmFeedbackInput || !llmRepairBtn) return;
+            const feedback = llmFeedbackInput.value.trim();
+            if (!feedback) {
+                notify.warn('Please describe what is wrong or how you want the sequence adjusted first.');
+                return;
+            }
+            const patternEl = root.querySelector('#bam-edit-pattern') as HTMLInputElement | null;
+            const nameEl = root.querySelector('#bam-edit-name') as HTMLInputElement | null;
+            if (nameEl) this._pendingName = nameEl.value;
+            if (patternEl) this._pendingPattern = patternEl.value;
+
+            const description = this._droppedActor?.rawDescription
+                ? `${this._droppedActor.rawDescription} (Pattern: ${patternEl?.value ?? ''})`
+                : (patternEl?.value ?? '');
+            const currentSeq = this._workingSequence && this._workingSequence.length > 0
+                ? this._workingSequence
+                : [[['<ITEM_0>']]];
+
+            const originalHtml = llmRepairBtn.innerHTML;
+            llmRepairBtn.disabled = true;
+            llmRepairBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Fixing...`;
+
+            try {
+                const fixedSequence = await llmClient.repairMultiattackSequence({
+                    description,
+                    currentSequence: currentSeq,
+                    userFeedback: feedback
+                });
+
+                if (fixedSequence) {
+                    this._workingSequence = fixedSequence;
+                    notify.info('LLM Agent repaired the multiattack sequence!');
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    (this as any).render?.();
+                } else {
+                    notify.warn('LLM Agent could not produce a valid sequence. Check your LLM API key/settings or refine your feedback.');
+                }
+            } finally {
+                if (llmRepairBtn) {
+                    llmRepairBtn.disabled = false;
+                    llmRepairBtn.innerHTML = originalHtml;
+                }
+            }
+        };
+
+        llmRepairBtn?.addEventListener('click', handleLlmRepair);
+        llmFeedbackInput?.addEventListener('keydown', (ev: KeyboardEvent) => {
+            if (ev.key === 'Enter') {
+                ev.preventDefault();
+                handleLlmRepair();
+            }
         });
 
         // Add Attack Pill to branch

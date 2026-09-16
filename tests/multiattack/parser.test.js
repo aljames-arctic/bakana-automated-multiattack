@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import '../setup.js';
 import { abstractMultiattackDescription, hydrateMultiattackSequence } from '../../src/multiattack/abstraction.js';
 import { parseMultiattackTemplate } from '../../src/multiattack/parser.js';
-import { parseLLMResponse } from '../../src/multiattack/prompt.js';
+import { parseLLMResponse, buildRepairUserPrompt } from '../../src/multiattack/prompt.js';
+import { llmClient } from '../../src/multiattack/llm-client.js';
 
 function createItems(names) {
     return names.map((name) => ({ name }));
@@ -209,3 +210,57 @@ test('parseLLMResponse cleanly strips markdown code blocks and validates 3D stri
     assert.equal(parseLLMResponse('{"not": "an array"}'), null);
     assert.equal(parseLLMResponse('["1D array"]'), null);
 });
+
+test('llmClient.repairMultiattackSequence provides formatting rules, current JSON, description, and user feedback to LLM agent', async () => {
+    const promptText = buildRepairUserPrompt({
+        description: 'The blorg makes either three attacks with their sword then one with their longbow, or they make two sling attacks.',
+        currentJson: '[[["<ITEM_0>", "<ITEM_0>", "<ITEM_0>", "<ITEM_1>"], ["<ITEM_2>", "<ITEM_2>"]]]',
+        userFeedback: 'Longbow (<ITEM_1>) must only be rolled AFTER the three sword attacks (<ITEM_0>), so it needs the strict order > prefix.'
+    });
+
+    assert.ok(promptText.includes('The blorg makes either three attacks'), 'Prompt should include multiattack description');
+    assert.ok(promptText.includes('[[["<ITEM_0>", "<ITEM_0>", "<ITEM_0>", "<ITEM_1>"]'), 'Prompt should include current JSON');
+    assert.ok(promptText.includes('needs the strict order > prefix'), 'Prompt should include user explanation of the error');
+
+    const origFetch = globalThis.fetch;
+    let capturedBody = null;
+    globalThis.fetch = async (_url, opts) => {
+        capturedBody = JSON.parse(opts.body);
+        return {
+            ok: true,
+            json: async () => ({
+                choices: [
+                    {
+                        message: {
+                            content: '[[["<ITEM_0>", "<ITEM_0>", "<ITEM_0>", "><ITEM_1>"], ["<ITEM_2>", "<ITEM_2>"]]]'
+                        }
+                    }
+                ]
+            })
+        };
+    };
+
+    try {
+        const repaired = await llmClient.repairMultiattackSequence(
+            {
+                description: 'The blorg makes either three attacks with their sword then one with their longbow, or they make two sling attacks.',
+                currentSequence: [[['<ITEM_0>', '<ITEM_0>', '<ITEM_0>', '<ITEM_1>'], ['<ITEM_2>', '<ITEM_2>']]],
+                userFeedback: 'Longbow (<ITEM_1>) must only be rolled AFTER the three sword attacks (<ITEM_0>)'
+            },
+            { provider: 'openai', apiKey: 'test-key', model: 'gpt-4o-mini' }
+        );
+
+        assert.ok(capturedBody, 'Should send HTTP request to LLM provider');
+        assert.ok(capturedBody.messages[0].content.includes('3D Array Schema Rules'), 'System prompt should contain 3D Array Schema formatting rules');
+        assert.ok(capturedBody.messages[1].content.includes('Current 3D JSON Sequence:'), 'User message should contain current JSON sequence');
+        assert.deepEqual(repaired, [
+            [
+                ['<ITEM_0>', '<ITEM_0>', '<ITEM_0>', '><ITEM_1>'],
+                ['<ITEM_2>', '<ITEM_2>']
+            ]
+        ]);
+    } finally {
+        globalThis.fetch = origFetch;
+    }
+});
+
