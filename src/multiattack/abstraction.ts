@@ -48,6 +48,77 @@ export function getItemSurfaceForms(rawName: string, grammar: LocalizedGrammar =
 }
 
 /**
+ * Resolves a D&D 5e v4+ enricher item reference (e.g. `.mmArcaneBurst000` in `[[/item .mmArcaneBurst000]]`
+ * or `@UUID[...Item.mmArcaneBurst000]{Arcane Burst}`) against the actor's inventory items.
+ */
+export function resolveEnricherItemName(
+    rawTarget: string,
+    explicitLabel: string | undefined,
+    actorItems: Item[],
+    grammar: LocalizedGrammar = getLocalizedGrammar()
+): string {
+    const validItems = (actorItems ?? []).filter((i) => i?.name && !isLocalizedMultiattackName(i.name));
+
+    // 1. If an explicit {label} was provided on the enricher tag, check if it matches an actor item
+    if (explicitLabel && explicitLabel.trim()) {
+        const cleanLabel = explicitLabel.trim();
+        const lowerLabel = cleanLabel.toLowerCase();
+        const exact = validItems.find((i) => i.name.trim().toLowerCase() === lowerLabel);
+        if (exact) return exact.name.trim();
+        for (const item of validItems) {
+            if (getItemSurfaceForms(item.name, grammar).includes(lowerLabel)) {
+                return item.name.trim();
+            }
+        }
+        return cleanLabel;
+    }
+
+    // 2. Clean raw target (e.g. ".mmArcaneBurst000", "Compendium.dnd5e.items.Item.mmArcaneBurst000", "id=mmArcaneBurst000")
+    const parts = rawTarget.trim().split('.');
+    const lastSegment = (parts[parts.length - 1] ?? rawTarget).replace(/^id=/i, '').trim();
+
+    if (lastSegment) {
+        // 2a. Match by exact item ID / _id / sourceId on the actor
+        const byId = validItems.find((i) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const anyItem = i as any;
+            const itemId = String(i.id ?? anyItem._id ?? '');
+            const sourceId = String(anyItem.flags?.dnd5e?.sourceId ?? anyItem._stats?.compendiumSource ?? '');
+            return (
+                itemId === lastSegment ||
+                sourceId.endsWith(`.${lastSegment}`) ||
+                i.name.trim().toLowerCase() === lastSegment.toLowerCase()
+            );
+        });
+        if (byId) return byId.name.trim();
+
+        // 2b. Decode D&D 5e 2024 MM / compendium camelCase IDs (e.g. "mmArcaneBurst000" -> "Arcane Burst")
+        const strippedPrefix = lastSegment
+            .replace(/^(?:mm|phb|dmg|srd|monster|npc)(?=[A-Z])/i, '')
+            .replace(/\d+$/, '');
+        const decodedName = strippedPrefix
+            .replace(/([a-z])([A-Z])/g, '$1 $2')
+            .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+            .trim();
+
+        if (decodedName) {
+            const lowerDecoded = decodedName.toLowerCase();
+            const byDecoded = validItems.find((i) => i.name.trim().toLowerCase() === lowerDecoded);
+            if (byDecoded) return byDecoded.name.trim();
+
+            for (const item of validItems) {
+                if (getItemSurfaceForms(item.name, grammar).includes(lowerDecoded)) {
+                    return item.name.trim();
+                }
+            }
+            return decodedName;
+        }
+    }
+
+    return rawTarget.trim();
+}
+
+/**
  * Abstracts a Multiattack natural language description in any localized language (`localize('BAM.grammar.*')`)
  * by replacing creature subject references with `<ACTOR>` and actor item/weapon names with ordered
  * `<ITEM_0>`, `<ITEM_1>`, etc. placeholders.
@@ -82,12 +153,26 @@ export function abstractMultiattackDescription(
         .map((a) => escapeRegExp(a))
         .sort((a, b) => b.length - a.length)
         .join('|');
+    const articlePrefix = articlesAlternation ? `(?:(?:${articlesAlternation})\\s+)?` : '(?:the\\s+)?';
+
+    // 1b. Resolve D&D 5e v4+ Enrichers ([[lookup @name]], [[/item .mmArcaneBurst000]], @UUID[...])
+    text = text.replace(
+        new RegExp(`${articlePrefix}\\[\\[\\s*lookup\\s+@name[^\\]]*\\]\\](?:\\{[^}]*\\})?`, 'giu'),
+        '<ACTOR>'
+    );
+    text = text.replace(
+        /\[\[\s*\/item\s+([^\]]+?)\s*\]\](?:\{([^}]*)\})?/giu,
+        (_match, target: string, label?: string) => resolveEnricherItemName(target, label, actorItems, grammar)
+    );
+    text = text.replace(
+        /@(?:UUID|Compendium)\[([^\]]+)\](?:\{([^}]*)\})?/giu,
+        (_match, target: string, label?: string) => resolveEnricherItemName(target, label, actorItems, grammar)
+    );
 
     // 2. Replace explicit actor name if provided
     if (actorName && actorName.trim().length > 1) {
         const cleanActor = actorName.trim();
         const escapedActor = escapeRegExp(cleanActor);
-        const articlePrefix = articlesAlternation ? `(?:(?:${articlesAlternation})\\s+)?` : '(?:the\\s+)?';
         text = text.replace(new RegExp(`\\b${articlePrefix}${escapedActor}\\b`, 'giu'), '<ACTOR>');
 
         // Also handle last word of multi-word actor names (e.g., "Adult Red Dragon" -> "the dragon", "Roter Drache" -> "der Drache")

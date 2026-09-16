@@ -32,6 +32,26 @@ export const SYSTEM_DEFAULT_TEMPLATES: AutorecEntry[] = [
         version: '1.0.0'
     },
     {
+        id: 'default-three-same-attacks',
+        name: 'Three Identical Weapon Attacks',
+        type: 'template',
+        pattern: '<ACTOR> makes three <ITEM_0> attacks.',
+        sequence: [[['<ITEM_0>', '<ITEM_0>', '<ITEM_0>']]],
+        enabled: true,
+        sourceModule: 'system-default',
+        version: '1.0.0'
+    },
+    {
+        id: 'default-four-same-attacks',
+        name: 'Four Identical Attacks',
+        type: 'template',
+        pattern: '<ACTOR> makes four <ITEM_0> attacks.',
+        sequence: [[['<ITEM_0>', '<ITEM_0>', '<ITEM_0>', '<ITEM_0>']]],
+        enabled: true,
+        sourceModule: 'system-default',
+        version: '1.0.0'
+    },
+    {
         id: 'default-three-attacks-1-2',
         name: 'Three Attacks (1 Primary + 2 Secondary)',
         type: 'template',
