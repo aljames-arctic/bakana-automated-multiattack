@@ -280,7 +280,10 @@ export function hydrateMultiattackSequence(
         (Array.isArray(section) ? section : []).map((optionFlow) =>
             (Array.isArray(optionFlow) ? optionFlow : []).map((token) => {
                 const trimmed = String(token ?? '').trim();
-                return itemMap[trimmed] ?? trimmed;
+                const strict = trimmed.startsWith('>');
+                const cleanKey = strict ? trimmed.slice(1).trim().toUpperCase() : trimmed.toUpperCase();
+                const mapped = itemMap[cleanKey] ?? itemMap[trimmed] ?? (strict ? trimmed.slice(1).trim() : trimmed);
+                return strict ? `>${mapped}` : mapped;
             })
         )
     );

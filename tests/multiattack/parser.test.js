@@ -183,6 +183,20 @@ test('Deterministic Parser Suite: 15+ Canonical D&D 5e Multiattack Test Cases & 
             [['Longsword', 'Longsword', 'Longsword', 'Longsword', 'Longsword', 'Longsword', 'Tail']]
         ]);
     });
+
+    await t.test('16. Blorg (Either three sword attacks then one longbow attack, or two sling attacks)', () => {
+        const result = parseEndToEnd(
+            'The blorg makes either three attacks with their sword then one with their longbow, or they make two sling attacks.',
+            ['Sword', 'Longbow', 'Sling'],
+            'Blorg'
+        );
+        assert.deepEqual(result, [
+            [
+                ['Sword', 'Sword', 'Sword', '>Longbow'],
+                ['Sling', 'Sling']
+            ]
+        ]);
+    });
 });
 
 test('parseLLMResponse cleanly strips markdown code blocks and validates 3D string arrays', () => {
