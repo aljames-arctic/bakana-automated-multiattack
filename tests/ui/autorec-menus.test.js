@@ -49,7 +49,7 @@ test('AutorecMenuApplication, AutorecExchangeMenuApplication, and AutomatedSuppo
         const renderedSupport = await supportApp.render({ force: true });
         assert.ok(renderedSupport, 'AutomatedSupportMenuApplication should render without throwing');
         const supportDom = await supportApp._renderHTML({}, {});
-        assert.ok(supportDom.innerHTML.includes('Enable Automated Support (LLM)'), 'Should render LLM enable toggle');
+        assert.ok(supportDom.innerHTML.includes('Enable Automated Support'), 'Should render Automated Support enable toggle');
         assert.ok(supportDom.innerHTML.includes('LLM Provider'), 'Should render LLM Provider dropdown');
     } finally {
         globalThis.document = origDoc;
