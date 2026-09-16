@@ -86,6 +86,23 @@ export class BaseFoundryAdapter {
     }
 
     /**
+     * Determines whether the active client user is the user who created the given ChatMessage.
+     * @param {ChatMessage|null|undefined} message Chat message document
+     * @param {string} [hookUserId] Optional userId passed as the 3rd argument to createChatMessage hook
+     * @returns {boolean}
+     */
+    isMessageAuthor(message: ChatMessage | null | undefined, hookUserId?: string): boolean {
+        const currentUserId = game.user?.id;
+        if (!currentUserId) return false;
+        if (hookUserId) {
+            return hookUserId === currentUserId;
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const authorId = message?.author?.id ?? (message as any)?.user?.id ?? (message as any)?.user;
+        return authorId === currentUserId;
+    }
+
+    /**
      * Classify a Foundry User into a standard permission tier (1: Player, 2: Trusted Player, 3: GM / Co-GM).
      * @param {User} user Concrete User document
      * @returns {number|null}

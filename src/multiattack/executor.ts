@@ -207,8 +207,13 @@ export async function executeMultiattack(
  */
 export function registerMultiattackChatHooks(): void {
     // 1. Automatic trigger on chat card creation
-    Hooks.on('createChatMessage', async (message: ChatMessage) => {
+    Hooks.on('createChatMessage', async (message: ChatMessage, _options: unknown, userId: string) => {
         if (!adapter.isMultiattackMessage(message)) return;
+
+        // Only trigger on the client of the user who created the chat card
+        if (!adapter.isMessageAuthor(message, userId)) {
+            return;
+        }
 
         const msgId = message.id;
         if (msgId && _processedMessageIds.has(msgId)) return;
@@ -219,11 +224,6 @@ export function registerMultiattackChatHooks(): void {
 
         const context = adapter.extractMultiattackContext(message);
         if (!context) return;
-
-        // Only trigger on the client of the user who is in charge of the speaker token/actor
-        if (!adapter.isUserInCharge(context.token, context.actor, game.user)) {
-            return;
-        }
 
         await executeMultiattack(context.actor, context.item, context.token);
     });

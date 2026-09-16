@@ -39,6 +39,10 @@ class Adapter {
         return this.foundry.isUserInCharge(token, actor, user);
     }
 
+    isMessageAuthor(message: ChatMessage | null | undefined, hookUserId?: string): boolean {
+        return this.foundry.isMessageAuthor(message, hookUserId);
+    }
+
     isMultiattackMessage(message: ChatMessage): boolean {
         return this.system.isMultiattackMessage(message);
     }
