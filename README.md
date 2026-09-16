@@ -30,6 +30,14 @@ Both creatures collapse into the **exact same canonical template** (`[[["<ITEM_0
 - **Interactive Chat Card Button**: Injects a sleek **⚡ Execute Multiattack** button onto Multiattack chat cards for manual or repeat execution.
 - **Native `item.use()` Execution & Custom Popup Select Menu**: Rolls each weapon/feature natively via `item.use()` so workflow modules like **Midi-QOL** hook into rolls naturally without brittle direct API dependencies, and presents choices via a built-in glassmorphism **Popup Select Dialog** (removing any dependency on `chrisPremades`).
 
+### 5. Multi-Language Grammar Support via Foundry Localization (`localize()`)
+- **Language-Agnostic Syntactic Engine**: Both the item abstraction engine (`abstractMultiattackDescription`) and deterministic grammar parser (`parseMultiattackTemplate`) dynamically resolve active grammar rules via Foundry's `game.i18n.localize('BAM.grammar.*')`.
+- **Localized Grammar Dictionaries (`lang/*.json`)**:
+  - **English (`en`)**: `"Multiattack"`, `"then"`, `"or"`, number words (`one`–`ten`), and standard action/replacement phrasings.
+  - **German (`de`)**: `"Mehrfachangriff"`, `"danach"` / `"anschließend"`, `"oder"`, German number words (`ein`/`eine`/`einen`–`zehn`), and plural stem handling (`Klauen` $\leftrightarrow$ `Klaue`).
+  - **French (`fr`)**: `"Attaques multiples"` / `"Attaque multiple"`, `"puis"` / `"ensuite"`, `"ou"`, French number words (`un`/`une`–`dix`), and multi-word attack categories (`attaque au corps à corps`, `attaque à distance`).
+  - Adding support for any new language requires only adding the `BAM.grammar.*` keys to a `lang/<lang>.json` file.
+
 ---
 
 ## Development & Verification
@@ -38,9 +46,10 @@ Both creatures collapse into the **exact same canonical template** (`[[["<ITEM_0
 # 1. Static Type Checking (Strict TypeScript + fvtt-types)
 npm run typecheck
 
-# 2. Unit Tests (24 test cases covering abstraction, deterministic parsing, central autorec, and chat card execution)
+# 2. Unit Tests (28 test cases covering multi-language abstraction, deterministic parsing, central autorec, and chat card execution)
 npm test
 
 # 3. Production Bundle (Vite with minify: false for console signature preservation)
 npm run build
 ```
+

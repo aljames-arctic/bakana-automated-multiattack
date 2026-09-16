@@ -1,6 +1,35 @@
 {
   "BAM": {
     "title": "Bakana's Automated Multiattack",
+    "grammar": {
+      "multiattackNames": "Multiattack",
+      "meleeKeywords": "melee attack, melee attacks",
+      "rangedKeywords": "ranged attack, ranged attacks",
+      "attackSuffixes": "attack, attacks",
+      "subjectArticles": "the, this",
+      "subjectPronouns": "it, he, she, they",
+      "possessiveKeywords": "its, his, her, their",
+      "actionVerbs": "makes, can use, uses, attacks, casts, has, also makes",
+      "thenDelimiters": "then",
+      "orDelimiters": "or",
+      "canUseKeywords": "can use, uses",
+      "replaceKeywords": "can replace",
+      "replaceWithKeywords": "with",
+      "conditionIfKeywords": "if, when",
+      "bonusAlsoKeywords": "can also make, also makes",
+      "numbers": {
+        "1": "a, an, one",
+        "2": "two",
+        "3": "three",
+        "4": "four",
+        "5": "five",
+        "6": "six",
+        "7": "seven",
+        "8": "eight",
+        "9": "nine",
+        "10": "ten"
+      }
+    },
     "settingsSections": {
       "world": "World Settings",
       "user": "User Settings",

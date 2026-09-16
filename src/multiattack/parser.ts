@@ -1,31 +1,22 @@
+import { getLocalizedGrammar, escapeRegExp, type LocalizedGrammar } from './grammar.js';
 import type { MultiattackSequence } from '../types/global.d.js';
 
-const NUMBER_WORDS: Record<string, number> = {
-    a: 1,
-    an: 1,
-    one: 1,
-    two: 2,
-    three: 3,
-    four: 4,
-    five: 5,
-    six: 6,
-    seven: 7,
-    eight: 8,
-    nine: 9,
-    ten: 10
-};
-
 /**
- * Parses a number word or digit string into an integer.
+ * Parses a localized number word or digit string into an integer using `grammar.numberWords`.
  * @param {string | undefined} token Word or digit string
  * @param {number} [defaultVal=1] Fallback integer value
+ * @param {LocalizedGrammar} [grammar] Active localized grammar
  * @returns {number}
  */
-export function parseQuantity(token: string | undefined, defaultVal: number = 1): number {
+export function parseQuantity(
+    token: string | undefined,
+    defaultVal: number = 1,
+    grammar: LocalizedGrammar = getLocalizedGrammar()
+): number {
     if (!token) return defaultVal;
     const clean = token.trim().toLowerCase();
-    if (NUMBER_WORDS[clean] !== undefined) {
-        return NUMBER_WORDS[clean];
+    if (grammar.numberWords[clean] !== undefined) {
+        return grammar.numberWords[clean]!;
     }
     const num = parseInt(clean, 10);
     return Number.isFinite(num) && num > 0 ? num : defaultVal;
@@ -43,12 +34,10 @@ function repeatToken(token: string, count: number): string[] {
 }
 
 /**
- * Extracts quantified `<ITEM_N>` or generic attack tokens from a single clause.
- * E.g. "one with its <ITEM_0> and two with its <ITEM_1>" -> ["<ITEM_0>", "<ITEM_1>", "<ITEM_1>"]
- * E.g. "two <ITEM_0> attacks" -> ["<ITEM_0>", "<ITEM_0>"]
- * E.g. "three melee attacks" -> ["melee attack", "melee attack", "melee attack"]
+ * Extracts quantified `<ITEM_N>` or generic melee/ranged attack tokens from a single clause
+ * using localized number words and keywords from `grammar`.
  */
-function parseSingleClauseItems(clause: string): string[] {
+function parseSingleClauseItems(clause: string, grammar: LocalizedGrammar): string[] {
     const clean = clause.trim();
     if (!clean) return [];
 
@@ -56,20 +45,33 @@ function parseSingleClauseItems(clause: string): string[] {
     const colonIdx = clean.indexOf(':');
     if (colonIdx !== -1) {
         const afterColon = clean.slice(colonIdx + 1).trim();
-        const breakdown = parseQuantifiedItemList(afterColon);
+        const breakdown = parseQuantifiedItemList(afterColon, grammar);
         if (breakdown.length > 0) {
             return breakdown;
         }
     }
 
-    // 2. Check for "can use its <ITEM_N>" or "uses its <ITEM_N>" or "uses <ITEM_N>"
-    const useMatch = /\b(?:can\s+use|uses)\s+(?:its\s+)?(<ITEM_\d+>)/i.exec(clean);
-    if (useMatch && useMatch[1] && !clean.includes('makes')) {
-        return [useMatch[1]];
+    // 2. Check for localized ability usage phrases (e.g. "can use its <ITEM_0>", "kann seine <ITEM_0> einsetzen", "peut utiliser sa <ITEM_0>")
+    const canUseAlternation = grammar.canUseKeywords
+        .map((w) => escapeRegExp(w).replace(/\s+/g, '\\s+'))
+        .join('|');
+    if (canUseAlternation) {
+        const useRegex = new RegExp(`\\b(?:${canUseAlternation})\\b[^.!?]*?(<ITEM_\\d+>)`, 'iu');
+        const useMatch = useRegex.exec(clean);
+        // Ensure it's an ability use clause rather than a standard quantified attack list
+        if (useMatch && useMatch[1] && !/\b\d+\b/.test(clean.replace(/<ITEM_\d+>/g, ''))) {
+            // Check if no number word > 1 precedes it
+            const hasMultiQty = Object.entries(grammar.numberWords).some(
+                ([word, qty]) => qty > 1 && new RegExp(`\\b${escapeRegExp(word)}\\b`, 'iu').test(clean)
+            );
+            if (!hasMultiQty) {
+                return [useMatch[1]];
+            }
+        }
     }
 
     // 3. Parse quantified item list from the clause directly
-    const directList = parseQuantifiedItemList(clean);
+    const directList = parseQuantifiedItemList(clean, grammar);
     if (directList.length > 0) {
         return directList;
     }
@@ -78,35 +80,55 @@ function parseSingleClauseItems(clause: string): string[] {
 }
 
 /**
- * Parses a list of quantified items or generic melee/ranged attacks from a phrase.
+ * Parses a list of quantified `<ITEM_N>` or localized generic melee/ranged attacks from a phrase.
+ * Works across languages by matching `[Localized Number Word or Digit]` followed within a few words
+ * by `<ITEM_N>` or a localized melee/ranged keyword.
  */
-function parseQuantifiedItemList(phrase: string): string[] {
+function parseQuantifiedItemList(phrase: string, grammar: LocalizedGrammar): string[] {
     const results: string[] = [];
 
-    // Pattern A: "<QTY> (?:with (?:its )?|attacks? with (?:its )?)?<ITEM_N>" or "<QTY> <ITEM_N> attacks?"
-    // Pattern B: "<QTY> (melee|ranged) attacks?"
-    // Let's match tokens in order of occurrence in the phrase
-    const tokenRegex = /\b(a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(?:(?:melee|ranged)\s+attacks?\s+with\s+(?:its\s+)?|attacks?\s+with\s+(?:its\s+)?|with\s+(?:its\s+)?)?(<ITEM_\d+>|melee\s+attacks?|ranged\s+attacks?)/gi;
+    const numWordsSorted = Object.keys(grammar.numberWords)
+        .sort((a, b) => b.length - a.length)
+        .map((w) => escapeRegExp(w));
+    const numPattern = numWordsSorted.length > 0
+        ? `(?:${numWordsSorted.join('|')}|\\d+)`
+        : '\\d+';
+
+    const meleeSorted = [...grammar.meleeKeywords].sort((a, b) => b.length - a.length).map((w) => escapeRegExp(w).replace(/\s+/g, '\\s+'));
+    const rangedSorted = [...grammar.rangedKeywords].sort((a, b) => b.length - a.length).map((w) => escapeRegExp(w).replace(/\s+/g, '\\s+'));
+
+    const hasExplicitItems = /<ITEM_\d+>/.test(phrase);
+    const targetAlternatives = hasExplicitItems
+        ? '<ITEM_\\d+>'
+        : [...meleeSorted, ...rangedSorted].join('|');
+
+    // Matches: (NumberWord) + up to 8 intervening words (prepositions/possessives/flavor text like "melee attacks with its", "attaques au corps à corps avec son") + (Target)
+    const tokenRegex = new RegExp(
+        `\\b(${numPattern})\\b(?:\\s+(?!<ITEM_\\d+>|${numPattern}\\b)[\\p{L}-]+){0,8}?\\s*(${targetAlternatives})`,
+        'giu'
+    );
 
     let match: RegExpExecArray | null;
     while ((match = tokenRegex.exec(phrase)) !== null) {
         const qtyStr = match[1];
-        const rawTarget = match[2] ?? '';
-        const qty = parseQuantity(qtyStr, 1);
+        const rawTarget = (match[2] ?? '').trim();
+        const qty = parseQuantity(qtyStr, 1, grammar);
 
-        let normalizedTarget = rawTarget.trim();
-        if (/^melee\s+attacks?$/i.test(normalizedTarget)) {
+        let normalizedTarget = rawTarget;
+        const lowerTarget = rawTarget.toLowerCase();
+
+        if (grammar.meleeKeywords.some((k) => k.toLowerCase() === lowerTarget)) {
             normalizedTarget = 'melee attack';
-        } else if (/^ranged\s+attacks?$/i.test(normalizedTarget)) {
+        } else if (grammar.rangedKeywords.some((k) => k.toLowerCase() === lowerTarget)) {
             normalizedTarget = 'ranged attack';
         }
 
         results.push(...repeatToken(normalizedTarget, qty));
     }
 
-    // If no quantified matches, check for unquantified single item references like "makes a <ITEM_0> attack" or "with its <ITEM_0>"
+    // Fallback: if no quantified pairs matched, look for standalone <ITEM_N> tokens in order
     if (results.length === 0) {
-        const singleItemRegex = /\b(<ITEM_\d+>)/g;
+        const singleItemRegex = /(<ITEM_\d+>)/g;
         let singleMatch: RegExpExecArray | null;
         while ((singleMatch = singleItemRegex.exec(phrase)) !== null) {
             if (singleMatch[1]) {
@@ -136,7 +158,6 @@ function applyReplacementClause(baseSequences: string[][], replacementItem: stri
     for (const seq of baseSequences) {
         addUnique([...seq]);
 
-        // Generate sequences where one valid attack is replaced by replacementItem
         for (let i = 0; i < seq.length; i++) {
             const current = seq[i];
             if (targetItemToReplace && current !== targetItemToReplace) {
@@ -153,45 +174,65 @@ function applyReplacementClause(baseSequences: string[][], replacementItem: stri
 
 /**
  * Parses a single "then"-delimited section of an abstracted multiattack template
- * into an array of alternative attack sequences (`string[][]`).
+ * into an array of alternative attack sequences (`string[][]`) using localized grammar rules.
+ *
  * @param {string} sectionText Abstracted section text
+ * @param {LocalizedGrammar} [grammar] Active localized grammar
  * @returns {string[][]}
  */
-export function parseMultiattackSection(sectionText: string): string[][] {
+export function parseMultiattackSection(
+    sectionText: string,
+    grammar: LocalizedGrammar = getLocalizedGrammar()
+): string[][] {
     const clean = sectionText.trim();
     if (!clean) return [];
 
-    // Check for conditional extra attack sentence: "If <ACTOR> has ... can also make a <ITEM_Z> attack"
     let bonusItem: string | null = null;
     let mainText = clean;
 
-    const bonusMatch = /([.!?]\s*If\b[^.!?]*?\bcan\s+also\s+make\s+(?:a|an|one)?\s*(<ITEM_\d+>)[^.!?]*\.?)/i.exec(clean);
-    if (bonusMatch && bonusMatch[1] && bonusMatch[2]) {
-        bonusItem = bonusMatch[2];
-        mainText = clean.replace(bonusMatch[1], '').trim();
+    // 1. Check for localized conditional bonus attack sentence (e.g., "If <ACTOR> has ... can also make a <ITEM_Z> attack")
+    const ifAlternation = grammar.conditionIfKeywords.map((w) => escapeRegExp(w)).join('|');
+    const alsoAlternation = grammar.bonusAlsoKeywords.map((w) => escapeRegExp(w).replace(/\s+/g, '\\s+')).join('|');
+    if (ifAlternation && alsoAlternation) {
+        const bonusRegex = new RegExp(
+            `([.!?]\\s*(?:${ifAlternation})\\b[^.!?]*?\\b(?:${alsoAlternation})\\b[^.!?]*?(<ITEM_\\d+>)[^.!?]*\\.?$)`,
+            'iu'
+        );
+        const bonusMatch = bonusRegex.exec(clean);
+        if (bonusMatch && bonusMatch[1] && bonusMatch[2]) {
+            bonusItem = bonusMatch[2];
+            mainText = clean.replace(bonusMatch[1], '').trim();
+        }
     }
 
-    // Check for replacement sentence: "can replace one (?:of its <ITEM_X> )?attacks? with (?:its )?<ITEM_Y>"
+    // 2. Check for localized replacement sentence (e.g., "can replace one attack with <ITEM_Y>")
     let replacementItem: string | null = null;
     let replaceTarget: string | undefined = undefined;
 
-    const replaceMatch = /([.!?]?\s*(?:<ACTOR>|it|he|she|they)?\s*can\s+replace\s+one\s+(?:of\s+(?:its|these)\s+(?:(<ITEM_\d+>)\s+)?)?attacks?\s+with\s+(?:a\s+|an\s+|its\s+)?(<ITEM_\d+>)[^.!?]*\.?)/i.exec(mainText);
-    if (replaceMatch && replaceMatch[3]) {
-        replaceTarget = replaceMatch[2];
-        replacementItem = replaceMatch[3];
-        mainText = mainText.replace(replaceMatch[1], '').trim();
+    const replaceAlternation = grammar.replaceKeywords.map((w) => escapeRegExp(w).replace(/\s+/g, '\\s+')).join('|');
+    const withAlternation = grammar.replaceWithKeywords.map((w) => escapeRegExp(w)).join('|');
+    if (replaceAlternation && withAlternation) {
+        const replaceRegex = new RegExp(
+            `([.!?]?\\s*(?:<ACTOR>|[\\p{L}]+)?\\s*(?:${replaceAlternation})\\b[^.!?]*?(?:(<ITEM_\\d+>)[\\s\\p{L}-]+)?(?:${withAlternation})\\b[^.!?]*?(<ITEM_\\d+>)[^.!?]*\\.?$)`,
+            'iu'
+        );
+        const replaceMatch = replaceRegex.exec(mainText);
+        if (replaceMatch && replaceMatch[3]) {
+            replaceTarget = replaceMatch[2];
+            replacementItem = replaceMatch[3];
+            mainText = mainText.replace(replaceMatch[1], '').trim();
+        }
     }
 
-    // Split remaining mainText on "Or" / "or" branches:
-    // Handles ". Or <ACTOR> makes...", ", or <ACTOR> makes...", or "makes X or Y"
+    // 3. Split remaining mainText on localized "Or" / "oder" / "ou" branches
     const orBranches = mainText
-        .split(/(?:[.!?]\s+Or\b|\bOr\s+<ACTOR>\b|\bor\s+(?=(?:a|an|one|two|three|four|five|six|\d+)\s+(?:<ITEM_\d+>|melee|ranged|attacks?)))/i)
+        .split(grammar.orDelimiterRegex)
         .map((b) => b.trim())
         .filter(Boolean);
 
     let sequences: string[][] = [];
     for (const branch of orBranches) {
-        const items = parseSingleClauseItems(branch);
+        const items = parseSingleClauseItems(branch, grammar);
         if (items.length > 0) {
             sequences.push(items);
         }
@@ -227,8 +268,8 @@ export function parseMultiattackSection(sectionText: string): string[][] {
 }
 
 /**
- * Deterministically parses an abstracted Multiattack template string into a 3D MultiattackSequence (`string[][][]`).
- * Returns `null` if the template cannot be deterministically parsed into at least one valid attack step.
+ * Deterministically parses an abstracted Multiattack template string into a 3D MultiattackSequence (`string[][][]`)
+ * using the active localized grammar ruleset resolved via `localize('BAM.grammar.*')`.
  *
  * @param {string} template Abstracted template string containing `<ACTOR>` and `<ITEM_N>` placeholders
  * @returns {MultiattackSequence | null}
@@ -236,16 +277,17 @@ export function parseMultiattackSection(sectionText: string): string[][] {
 export function parseMultiattackTemplate(template: string): MultiattackSequence | null {
     if (!template || !template.trim()) return null;
 
-    // Split template into sections by "then" transitions:
-    // e.g., "<ACTOR> can use its <ITEM_0>. <ACTOR> then makes..." or "... then ..."
+    const grammar = getLocalizedGrammar();
+
+    // Split template into sections by localized "then" transitions
     const rawSections = template
-        .split(/(?:[.!?]\s*(?:<ACTOR>|it|he|she|they)\s+then\b|\bthen\s+(?=(?:makes|can\s+use|uses)\b))/i)
+        .split(grammar.thenDelimiterRegex)
         .map((s) => s.trim())
         .filter(Boolean);
 
     const result: MultiattackSequence = [];
     for (const rawSection of rawSections) {
-        const parsedSection = parseMultiattackSection(rawSection);
+        const parsedSection = parseMultiattackSection(rawSection, grammar);
         if (parsedSection.length > 0) {
             result.push(parsedSection);
         }
