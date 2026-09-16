@@ -150,9 +150,7 @@ export class BaseFoundryAdapter {
         if (hookUserId) {
             return hookUserId === currentUserId;
         }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const authorId = message?.author?.id ?? (message as any)?.user?.id ?? (message as any)?.user;
-        return authorId === currentUserId;
+        return message?.author?.id === currentUserId;
     }
 
     /**
@@ -174,12 +172,10 @@ export class BaseFoundryAdapter {
         if (userRole != null && userRole >= assistantRole) {
             return USER_PERMISSION_TIERS.GM;
         }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        if (userRole === trustedRole || Boolean((user as any).isTrusted)) {
+        if (userRole === trustedRole) {
             return USER_PERMISSION_TIERS.TRUSTED;
         }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        if (userRole === playerRole || !(user as any).isTrusted) {
+        if (userRole === playerRole) {
             return USER_PERMISSION_TIERS.PLAYER;
         }
         return null;
@@ -200,9 +196,6 @@ export class BaseFoundryAdapter {
         const ownerLevel = CONST.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
         if (doc.testUserPermission) {
             return Boolean(doc.testUserPermission(user, 'OWNER'));
-        }
-        if (doc.getUserLevel) {
-            return doc.getUserLevel(user) >= ownerLevel;
         }
         if (doc.ownership) {
             const level = (user.id ? doc.ownership[user.id] : undefined) ?? doc.ownership.default ?? 0;
