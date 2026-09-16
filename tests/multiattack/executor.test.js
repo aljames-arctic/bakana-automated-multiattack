@@ -2,7 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import '../setup.js';
 import { adapter } from '../../src/adapter/index.js';
-import { executeMultiattack, registerMultiattackHooks } from '../../src/multiattack/executor.js';
+import {
+    executeMultiattack,
+    registerMultiattackHooks,
+    getSelectableTokensFromFlow,
+    removeFirstOccurrence,
+    getMatchingCategoryItems,
+    actorHasAttackOption
+} from '../../src/multiattack/executor.js';
 import { autorecManager } from '../../src/autorec/autorecManager.js';
 
 test('adapter.isMultiattackMessage detects Multiattack chat cards and ignores attack/damage rolls', () => {
@@ -165,3 +172,68 @@ test('registerMultiattackHooks automatically executes multiattack on dnd5e.postU
         adapter.foundry.selectOptionDialog = origSelect;
     }
 });
+
+test('getSelectableTokensFromFlow enforces strict-order (>) prefixes while preserving unordered multiset behavior', () => {
+    // Standard unordered multiset: both tokens are immediately selectable
+    assert.deepEqual(
+        getSelectableTokensFromFlow(['Bite', 'Claws']),
+        ['Bite', 'Claws'],
+        'Unprefixed tokens should all be selectable in any order'
+    );
+
+    // Strict-order follow-up: Charge must be executed before >Gore is unlocked
+    const chargeGoreFlow = ['Charge', '>Gore'];
+    assert.deepEqual(
+        getSelectableTokensFromFlow(chargeGoreFlow),
+        ['Charge'],
+        'Only Charge should be selectable before Charge is consumed'
+    );
+
+    // Once Charge is consumed, >Gore becomes selectable (stripped to clean name)
+    const remaining = removeFirstOccurrence(chargeGoreFlow, 'Charge');
+    assert.deepEqual(remaining, ['>Gore']);
+    assert.deepEqual(
+        getSelectableTokensFromFlow(remaining),
+        ['Gore'],
+        'Gore should become selectable after Charge is consumed'
+    );
+});
+
+test('getMatchingCategoryItems and actorHasAttackOption support spell attack, any attack, and any:ItemA|ItemB pools', () => {
+    const slashItem = {
+        id: 'slash-id',
+        name: 'Slash',
+        type: 'weapon',
+        system: { actionType: 'mwak' }
+    };
+    const fireBoltItem = {
+        id: 'firebolt-id',
+        name: 'Fire Bolt',
+        type: 'spell',
+        system: { actionType: 'rsak' }
+    };
+    const customActor = {
+        id: 'custom-actor',
+        name: 'Spellsword',
+        items: new Map([
+            ['slash-id', slashItem],
+            ['firebolt-id', fireBoltItem]
+        ])
+    };
+
+    const spellMatches = getMatchingCategoryItems(customActor, 'spell attack');
+    assert.equal(spellMatches.length, 1);
+    assert.equal(spellMatches[0].name, 'Fire Bolt');
+
+    const anyMatches = getMatchingCategoryItems(customActor, 'any attack');
+    assert.equal(anyMatches.length, 2);
+
+    const poolMatches = getMatchingCategoryItems(customActor, 'any:Slash|Fire Bolt|Nonexistent');
+    assert.equal(poolMatches.length, 2);
+    assert.deepEqual(poolMatches.map((i) => i.name), ['Slash', 'Fire Bolt']);
+
+    assert.equal(actorHasAttackOption(customActor, 'spell attack'), true);
+    assert.equal(actorHasAttackOption(customActor, 'any:Slash|Nonexistent'), true);
+    assert.equal(actorHasAttackOption(customActor, 'any:MissingA|MissingB'), false);
+});
+

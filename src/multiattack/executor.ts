@@ -7,43 +7,125 @@ import { resolveActorItem } from './abstraction.js';
 import type { SelectOptionItem } from '../types/global.d.js';
 
 /**
- * Removes the first occurrence of `item` from `arr`, returning a new array.
+ * Strips leading strict-order prefix (`>`) from an attack token string.
+ */
+export function stripOrderPrefix(token: string): string {
+    return String(token ?? '').replace(/^>\s*/, '').trim();
+}
+
+/**
+ * Returns the subset of attack tokens in a single flow that are legally selectable at the current step.
+ * If a token is prefixed with `>` (or followed by a `>` token), subsequent `>` tokens are locked
+ * until preceding tokens in the flow have been executed.
+ */
+export function getSelectableTokensFromFlow(flow: string[]): string[] {
+    const selectable: string[] = [];
+    for (let i = 0; i < flow.length; i++) {
+        const raw = flow[i] ?? '';
+        const clean = stripOrderPrefix(raw);
+        if (clean) {
+            selectable.push(clean);
+        }
+        const currentIsStrict = raw.trim().startsWith('>');
+        const nextIsStrict = Boolean(flow[i + 1]?.trim().startsWith('>'));
+        if (currentIsStrict || nextIsStrict) {
+            break;
+        }
+    }
+    return selectable;
+}
+
+/**
+ * Removes the first occurrence of `item` (ignoring `>` order prefix) from `arr`, returning a new array.
  */
 export function removeFirstOccurrence(arr: string[], item: string): string[] {
-    const idx = arr.findIndex((x) => x.toLowerCase() === item.toLowerCase());
+    const cleanTarget = stripOrderPrefix(item).toLowerCase();
+    const idx = arr.findIndex((x) => stripOrderPrefix(x).toLowerCase() === cleanTarget);
     if (idx === -1) return [...arr];
     return [...arr.slice(0, idx), ...arr.slice(idx + 1)];
 }
 
 /**
+ * Helper to filter actor items matching a generic category ('melee attack', 'ranged attack', 'spell attack', 'any attack')
+ * or pipe-delimited pool ('any:ItemA|ItemB').
+ */
+export function getMatchingCategoryItems(actor: Actor, categoryOrPool: string): Item[] {
+    const clean = stripOrderPrefix(categoryOrPool);
+    const lower = clean.toLowerCase();
+    const items = adapter.getActorItems(actor);
+
+    if (lower === 'melee attack') {
+        return items.filter((i) => ['mwak', 'msak'].includes(adapter.getItemActionType(i)));
+    }
+    if (lower === 'ranged attack') {
+        return items.filter((i) => ['rwak', 'rsak'].includes(adapter.getItemActionType(i)));
+    }
+    if (lower === 'spell attack') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return items.filter((i) => ['msak', 'rsak'].includes(adapter.getItemActionType(i)) || (i as any).type === 'spell');
+    }
+    if (lower === 'any attack') {
+        return items.filter((i) => ['mwak', 'rwak', 'msak', 'rsak'].includes(adapter.getItemActionType(i)));
+    }
+    if (lower.startsWith('any:')) {
+        const poolNames = clean
+            .slice(4)
+            .split('|')
+            .map((s) => s.trim())
+            .filter(Boolean);
+        const resolved: Item[] = [];
+        const seenIds = new Set<string>();
+        for (const name of poolNames) {
+            const item = resolveActorItem(actor, name);
+            if (item && !seenIds.has(item.id ?? item.name)) {
+                seenIds.add(item.id ?? item.name);
+                resolved.push(item);
+            }
+        }
+        return resolved;
+    }
+    return [];
+}
+
+/**
  * Checks whether an actor possesses a valid item for the given token string,
- * or if the token is a generic category ('melee attack' / 'ranged attack').
+ * or if the token is a generic category ('melee attack', 'ranged attack', 'spell attack', 'any attack', or 'any:A|B').
  */
 export function actorHasAttackOption(actor: Actor, token: string): boolean {
-    const lower = token.trim().toLowerCase();
-    if (lower === 'melee attack' || lower === 'ranged attack') {
-        const items = adapter.getActorItems(actor);
-        const targetTypes = lower === 'melee attack' ? ['mwak', 'msak'] : ['rwak', 'rsak'];
-        return items.some((item) => targetTypes.includes(adapter.getItemActionType(item)));
+    const clean = stripOrderPrefix(token);
+    const lower = clean.toLowerCase();
+    if (
+        lower === 'melee attack' ||
+        lower === 'ranged attack' ||
+        lower === 'spell attack' ||
+        lower === 'any attack' ||
+        lower.startsWith('any:')
+    ) {
+        return getMatchingCategoryItems(actor, clean).length > 0;
     }
-    return resolveActorItem(actor, token) !== null;
+    return resolveActorItem(actor, clean) !== null;
 }
 
 /**
  * Resolves a concrete Item document to roll for a given selection string.
- * If the selection is generic ('melee attack' or 'ranged attack') and multiple weapons match,
+ * If the selection is a generic category or pool and multiple weapons match,
  * prompts the user via `adapter.selectOptionDialog`.
  */
 export async function resolveConcreteAttackItem(actor: Actor, selection: string): Promise<Item | null> {
-    const lower = selection.trim().toLowerCase();
+    const clean = stripOrderPrefix(selection);
+    const lower = clean.toLowerCase();
 
-    if (lower === 'melee attack' || lower === 'ranged attack') {
-        const items = adapter.getActorItems(actor);
-        const targetTypes = lower === 'melee attack' ? ['mwak', 'msak'] : ['rwak', 'rsak'];
-        const matchingItems = items.filter((item) => targetTypes.includes(adapter.getItemActionType(item)));
+    if (
+        lower === 'melee attack' ||
+        lower === 'ranged attack' ||
+        lower === 'spell attack' ||
+        lower === 'any attack' ||
+        lower.startsWith('any:')
+    ) {
+        const matchingItems = getMatchingCategoryItems(actor, clean);
 
         if (matchingItems.length === 0) {
-            notify.warn(`Multiattack: Could not find a valid ${selection} on ${actor.name}.`);
+            notify.warn(`Multiattack: Could not find a valid ${clean} on ${actor.name}.`);
             return null;
         }
         if (matchingItems.length === 1) {
@@ -58,17 +140,21 @@ export async function resolveConcreteAttackItem(actor: Actor, selection: string)
         }));
 
         const title = lower === 'melee attack'
-            ? localize('BAM.selectDialog.meleePromptTitle', 'Select Melee Weapon')
-            : localize('BAM.selectDialog.rangedPromptTitle', 'Select Ranged Weapon');
+            ? localize('BAM.selectDialog.meleePromptTitle', 'Select Melee Attack')
+            : lower === 'ranged attack'
+                ? localize('BAM.selectDialog.rangedPromptTitle', 'Select Ranged Attack')
+                : lower === 'spell attack'
+                    ? localize('BAM.selectDialog.spellPromptTitle', 'Select Spell Attack')
+                    : localize('BAM.selectDialog.anyPromptTitle', 'Select Attack');
 
         const chosenName = await adapter.selectOptionDialog(options, { title });
         if (!chosenName) return null;
         return resolveActorItem(actor, chosenName);
     }
 
-    const item = resolveActorItem(actor, selection);
+    const item = resolveActorItem(actor, clean);
     if (!item) {
-        notify.warn(`Multiattack: Cannot find attack item "${selection}" on ${actor.name}.`);
+        notify.warn(`Multiattack: Cannot find attack item "${clean}" on ${actor.name}.`);
     }
     return item;
 }
@@ -76,6 +162,7 @@ export async function resolveConcreteAttackItem(actor: Actor, selection: string)
 /**
  * Executes a single section's option map (`string[][]`) interactively or automatically.
  * Reduces remaining options after each attack roll until a sequence flow completes or is cancelled.
+ * Supports both unordered multiset bags and strict-order (`>`) queues.
  *
  * @param {Actor} actor Concrete Actor performing the multiattack
  * @param {string[][]} initialOptionMap 2D array of alternative attack sequences for this section
@@ -102,8 +189,10 @@ export async function executeSectionOptionMap(
 
         const hasFinishOption = optionMap.some((flow) => flow.length === 0);
 
-        // Gather unique attack tokens across all non-empty flows
-        const uniqueTokens = Array.from(new Set(nonEmptyFlows.flatMap((flow) => flow)));
+        // Gather unique selectable attack tokens across all non-empty flows (respecting `>` strict ordering)
+        const uniqueTokens = Array.from(
+            new Set(nonEmptyFlows.flatMap((flow) => getSelectableTokensFromFlow(flow)))
+        );
         if (uniqueTokens.length === 0) {
             break;
         }
@@ -119,7 +208,11 @@ export async function executeSectionOptionMap(
             const dialogOptions: SelectOptionItem[] = uniqueTokens.map((atkToken) => {
                 const resolvedItem = resolveActorItem(actor, atkToken);
                 // Calculate max remaining count of this token in any single flow
-                const maxCount = Math.max(...nonEmptyFlows.map((f) => f.filter((x) => x.toLowerCase() === atkToken.toLowerCase()).length));
+                const maxCount = Math.max(
+                    ...nonEmptyFlows.map(
+                        (f) => f.filter((x) => stripOrderPrefix(x).toLowerCase() === atkToken.toLowerCase()).length
+                    )
+                );
                 return {
                     value: atkToken,
                     label: resolvedItem?.name ?? atkToken,
@@ -160,9 +253,11 @@ export async function executeSectionOptionMap(
             await adapter.useItem(attackItem, { token });
         }
 
-        // Reduce optionMap: keep flows containing `selectedToken` and remove one occurrence from each
+        // Reduce optionMap: keep flows where `selectedToken` was legally selectable, and remove one occurrence from each
         optionMap = nonEmptyFlows
-            .filter((flow) => flow.some((x) => x.toLowerCase() === selectedToken!.toLowerCase()))
+            .filter((flow) =>
+                getSelectableTokensFromFlow(flow).some((x) => x.toLowerCase() === selectedToken!.toLowerCase())
+            )
             .map((flow) => removeFirstOccurrence(flow, selectedToken!));
 
         stepCount++;
