@@ -164,6 +164,7 @@ export class AutorecMenuApplication extends BaseApp {
     /**
      * Reads a dropped Actor document, extracts its Multiattack item & weapons, resolves 2024 enrichers,
      * builds both abstract template and concrete sequences, and populates the editor.
+     * If the currently selected entry is already filled, creates a new entry first to prevent overwriting.
      */
     async handleActorDrop(actor: Actor, mode: 'template' | 'override' = 'template'): Promise<boolean> {
         if (!actor) return false;
@@ -191,22 +192,21 @@ export class AutorecMenuApplication extends BaseApp {
             )
         );
 
-        // Ensure an entry is selected so the inspector is active
-        if (!this._selectedId) {
-            const entries = autorecManager.getAllEntries();
-            if (entries.length > 0 && entries[0]) {
-                this._selectedId = entries[0].id;
-            } else {
-                const created = await autorecManager.registerEntry({
-                    id: '',
-                    name: `${actor.name} Multiattack`,
-                    type: mode,
-                    pattern: mode === 'override' ? `${actor.name}::${maItem.name}` : template,
-                    sequence: mode === 'override' ? concreteSequence : templateSequence,
-                    enabled: true
-                });
-                this._selectedId = created.id;
-            }
+        // If no entry is selected OR the selected entry is already filled (and not already in droppedActor mode),
+        // create a brand-new entry so existing filled templates are never overwritten.
+        const existingSelected = autorecManager.getAllEntries().find((e) => e.id === this._selectedId);
+        const isExistingFilled = Boolean(existingSelected && existingSelected.pattern.trim().length > 0 && !this._droppedActor);
+
+        if (!this._selectedId || isExistingFilled) {
+            const created = await autorecManager.registerEntry({
+                id: '',
+                name: `${actor.name} Pattern`,
+                type: mode,
+                pattern: '',
+                sequence: [],
+                enabled: true
+            });
+            this._selectedId = created.id;
         }
 
         this._droppedActor = {
@@ -281,7 +281,11 @@ export class AutorecMenuApplication extends BaseApp {
             </div>
         `).join('');
 
-        const seq = this._workingSequence ?? [[['<ITEM_0>']]];
+        const displayName = this._pendingName ?? selected?.name ?? '';
+        const displayPattern = this._pendingPattern ?? selected?.pattern ?? '';
+        const isUnfilled = Boolean(selected && !displayPattern.trim() && (!this._workingSequence || this._workingSequence.length === 0) && !this._droppedActor);
+
+        const seq = this._workingSequence && this._workingSequence.length > 0 ? this._workingSequence : [[['<ITEM_0>']]];
         const summaryHtml = summarizeSequenceInPlainEnglish(seq);
 
         const activeChoices = STANDARD_TOKEN_CHOICES.map((c) => {
@@ -381,7 +385,7 @@ export class AutorecMenuApplication extends BaseApp {
             `;
         }).join('');
 
-        const dropZoneHtml = this._droppedActor ? `
+        const droppedActorCardHtml = this._droppedActor ? `
             <div class="bam-dropped-actor-card" id="bam-actor-dropzone">
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
                     <div style="display: flex; align-items: center; gap: 10px;">
@@ -395,7 +399,7 @@ export class AutorecMenuApplication extends BaseApp {
                             </div>
                         </div>
                     </div>
-                    <button type="button" id="bam-clear-dropped-btn" class="bam-pill-btn" title="Clear dropped monster" style="font-size: 1rem; color: #94a3b8;">&times;</button>
+                    <button type="button" id="bam-clear-dropped-btn" class="bam-pill-btn" title="Clear dropped monster and reset to unfilled" style="font-size: 1rem; color: #94a3b8;">&times;</button>
                 </div>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding-top: 4px; border-top: 1px solid rgba(99, 102, 241, 0.25);">
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
@@ -414,85 +418,117 @@ export class AutorecMenuApplication extends BaseApp {
                     </div>
                 </div>
             </div>
-        ` : `
-            <div class="bam-actor-dropzone" id="bam-actor-dropzone">
-                <i class="fas fa-dragon" style="font-size: 1.45rem; color: #818cf8;"></i>
-                <div style="display: flex; flex-direction: column; gap: 2px;">
-                    <div style="font-weight: 600; color: #e2e8f0; font-size: 0.84rem;">
-                        Drag &amp; Drop Any Monster Actor Here to Auto-Fill
-                    </div>
-                    <div style="font-size: 0.75rem; color: #94a3b8;">
-                        Drop an Actor from the Sidebar or Compendium to automatically extract Multiattack text, weapons, and 2024 enrichers
-                    </div>
-                </div>
-            </div>
-        `;
+        ` : '';
 
-        const displayName = this._pendingName ?? selected?.name ?? '';
-        const displayPattern = this._pendingPattern ?? selected?.pattern ?? '';
-
-        const inspectorHtml = selected ? `
-            <div style="display: flex; flex-direction: column; gap: 12px;">
-                <!-- Drag & Drop Monster Auto-Fill Zone -->
-                ${dropZoneHtml}
-
-                <!-- Plain English Summary Banner -->
-                <div class="bam-summary-banner">
-                    <div class="bam-summary-title">
-                        <i class="fas fa-magic"></i> Plain-English Attack Summary
+        let inspectorHtml = '';
+        if (!selected) {
+            inspectorHtml = `<div style="color: #94a3b8;">No entries found. Click "+ Add Template" to create one.</div>`;
+        } else if (isUnfilled) {
+            inspectorHtml = `
+                <div style="display: flex; flex-direction: column; gap: 18px; padding: 12px 4px;">
+                    <div style="font-size: 0.92rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px;">
+                        <i class="fas fa-plus-circle" style="color: #818cf8;"></i> New Multiattack Template Setup
                     </div>
-                    <div class="bam-summary-body">
-                        ${summaryHtml}
+                    <div class="bam-actor-dropzone" id="bam-actor-dropzone" style="padding: 24px 18px; flex-direction: column; text-align: center; gap: 10px;">
+                        <i class="fas fa-dragon" style="font-size: 2.2rem; color: #818cf8;"></i>
+                        <div style="font-weight: 700; color: #e2e8f0; font-size: 0.95rem;">
+                            Option 1: Drag &amp; Drop a Monster Actor Here
+                        </div>
+                        <div style="font-size: 0.8rem; color: #94a3b8; max-width: 440px;">
+                            Drag any Actor from the Sidebar or Compendium into this box. We will automatically read its Multiattack feature, resolve 2024 enrichers, and configure the attack sequence for you.
+                        </div>
                     </div>
-                </div>
 
-                <div style="display: flex; flex-direction: column; gap: 10px;">
-                    <div style="display: flex; flex-direction: column; gap: 4px;">
-                        <label style="font-size: 0.78rem; color: #94a3b8;">Entry Name</label>
-                        <input type="text" id="bam-edit-name" value="${displayName}" style="width: 100%; padding: 6px 8px; background: #1e2436; border: 1px solid #4f46e5; color: #fff; border-radius: 4px;" />
+                    <div style="display: flex; align-items: center; gap: 12px; color: #64748b; font-size: 0.78rem; font-weight: 700; text-transform: uppercase;">
+                        <div style="flex: 1; height: 1px; background: rgba(99, 102, 241, 0.25);"></div>
+                        <span>OR</span>
+                        <div style="flex: 1; height: 1px; background: rgba(99, 102, 241, 0.25);"></div>
                     </div>
-                    <div style="display: flex; flex-direction: column; gap: 4px;">
-                        <label style="font-size: 0.78rem; color: #94a3b8;">Pattern / Key (Abstracted sentence or Actor::Item override)</label>
-                        <input type="text" id="bam-edit-pattern" value="${displayPattern}" style="width: 100%; padding: 6px 8px; background: #1e2436; border: 1px solid #4f46e5; color: #fff; border-radius: 4px; font-family: monospace;" />
-                    </div>
-                </div>
 
-                <!-- Visual Multiattack Flow Builder -->
-                <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <div style="display: flex; align-items: center; justify-content: space-between;">
-                        <label style="font-size: 0.8rem; font-weight: 600; color: #cbd5e1;">
-                            Visual Attack Sequence Builder
-                        </label>
-                        <button type="button" id="bam-add-step-btn" class="bam-option-btn" style="width: auto; padding: 3px 10px; font-size: 0.76rem;">
-                            <i class="fas fa-plus"></i> + Add "Then" Step
+                    <div style="background: rgba(15, 19, 30, 0.65); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 8px; padding: 16px; display: flex; align-items: center; justify-content: space-between; gap: 14px;">
+                        <div>
+                            <div style="font-weight: 700; color: #e2e8f0; font-size: 0.88rem;">
+                                Option 2: Fill Manually
+                            </div>
+                            <div style="font-size: 0.76rem; color: #94a3b8;">
+                                Start with a blank template and configure the pattern and visual attack steps yourself.
+                            </div>
+                        </div>
+                        <button type="button" id="bam-start-manual-btn" class="bam-chat-card-btn" style="width: auto; padding: 8px 16px; white-space: nowrap;">
+                            <i class="fas fa-sliders"></i> Fill Manually
                         </button>
                     </div>
-                    ${stepsBuilderHtml}
-                </div>
 
-                <!-- Collapsible Raw JSON for power users -->
-                <details style="margin-top: 4px;">
-                    <summary style="cursor: pointer; font-size: 0.76rem; color: #64748b;">
-                        Advanced: Raw 3D JSON Data
-                    </summary>
-                    <textarea id="bam-edit-sequence" rows="4" style="width: 100%; margin-top: 6px; padding: 6px; background: #11141d; border: 1px solid #334155; color: #94a3b8; border-radius: 4px; font-family: monospace; font-size: 0.78rem;">${JSON.stringify(seq, null, 2)}</textarea>
-                </details>
-
-                <div style="display: flex; gap: 10px; margin-top: 6px;">
-                    <button type="button" id="bam-save-btn" class="bam-chat-card-btn" style="flex: 1;">
-                        <i class="fas fa-save"></i> ${localize('BAM.autorecMenu.saveBtn', 'Save Changes')}
-                    </button>
-                    <button type="button" id="bam-delete-btn" class="bam-option-btn bam-option-finish" style="width: auto; padding: 6px 14px;">
-                        <i class="fas fa-trash"></i> ${localize('BAM.autorecMenu.deleteBtn', 'Delete')}
-                    </button>
+                    <div style="display: flex; justify-content: flex-end; margin-top: 8px;">
+                        <button type="button" id="bam-delete-btn" class="bam-option-btn bam-option-finish" style="width: auto; padding: 6px 14px;">
+                            <i class="fas fa-trash"></i> Discard New Template
+                        </button>
+                    </div>
                 </div>
-            </div>
-        ` : `<div style="color: #94a3b8;">No entries found. Drag &amp; drop any Monster Actor here to create one.</div>`;
+            `;
+        } else {
+            inspectorHtml = `
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                    ${droppedActorCardHtml}
+
+                    <!-- Plain English Summary Banner -->
+                    <div class="bam-summary-banner">
+                        <div class="bam-summary-title">
+                            <i class="fas fa-magic"></i> Plain-English Attack Summary
+                        </div>
+                        <div class="bam-summary-body">
+                            ${summaryHtml}
+                        </div>
+                    </div>
+
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <div style="display: flex; flex-direction: column; gap: 4px;">
+                            <label style="font-size: 0.78rem; color: #94a3b8;">Entry Name</label>
+                            <input type="text" id="bam-edit-name" value="${displayName}" style="width: 100%; padding: 6px 8px; background: #1e2436; border: 1px solid #4f46e5; color: #fff; border-radius: 4px;" />
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 4px;">
+                            <label style="font-size: 0.78rem; color: #94a3b8;">Pattern / Key (Abstracted sentence or Actor::Item override)</label>
+                            <input type="text" id="bam-edit-pattern" value="${displayPattern}" style="width: 100%; padding: 6px 8px; background: #1e2436; border: 1px solid #4f46e5; color: #fff; border-radius: 4px; font-family: monospace;" />
+                        </div>
+                    </div>
+
+                    <!-- Visual Multiattack Flow Builder -->
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                            <label style="font-size: 0.8rem; font-weight: 600; color: #cbd5e1;">
+                                Visual Attack Sequence Builder
+                            </label>
+                            <button type="button" id="bam-add-step-btn" class="bam-option-btn" style="width: auto; padding: 3px 10px; font-size: 0.76rem;">
+                                <i class="fas fa-plus"></i> + Add "Then" Step
+                            </button>
+                        </div>
+                        ${stepsBuilderHtml}
+                    </div>
+
+                    <!-- Collapsible Raw JSON for power users -->
+                    <details style="margin-top: 4px;">
+                        <summary style="cursor: pointer; font-size: 0.76rem; color: #64748b;">
+                            Advanced: Raw 3D JSON Data
+                        </summary>
+                        <textarea id="bam-edit-sequence" rows="4" style="width: 100%; margin-top: 6px; padding: 6px; background: #11141d; border: 1px solid #334155; color: #94a3b8; border-radius: 4px; font-family: monospace; font-size: 0.78rem;">${JSON.stringify(seq, null, 2)}</textarea>
+                    </details>
+
+                    <div style="display: flex; gap: 10px; margin-top: 6px;">
+                        <button type="button" id="bam-save-btn" class="bam-chat-card-btn" style="flex: 1;">
+                            <i class="fas fa-save"></i> ${localize('BAM.autorecMenu.saveBtn', 'Save Changes')}
+                        </button>
+                        <button type="button" id="bam-delete-btn" class="bam-option-btn bam-option-finish" style="width: auto; padding: 6px 14px;">
+                            <i class="fas fa-trash"></i> ${localize('BAM.autorecMenu.deleteBtn', 'Delete')}
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
 
         container.innerHTML = `
             <div class="bam-autorec-topbar">
                 <input type="text" class="bam-search-input" id="bam-search-input" placeholder="${localize('BAM.autorecMenu.searchPlaceholder', 'Filter templates or monsters...')}" value="${this._searchFilter}" />
-                <button type="button" id="bam-add-template-btn" class="bam-option-btn" style="width: auto; padding: 5px 12px;">
+                <button type="button" id="bam-add-template-btn" class="bam-option-btn" title="Click or Drag & Drop an Actor here to create a new template" style="width: auto; padding: 5px 12px;">
                     <i class="fas fa-plus"></i> ${localize('BAM.autorecMenu.addTemplateBtn', 'Add Template')}
                 </button>
                 <button type="button" id="bam-reset-defaults-btn" class="bam-option-btn bam-option-finish" style="width: auto; padding: 5px 12px;">
@@ -509,7 +545,7 @@ export class AutorecMenuApplication extends BaseApp {
             </div>
         `;
 
-        this._attachListeners(container);
+        this._attachListeners(container, isUnfilled);
         return container;
     }
 
@@ -551,7 +587,7 @@ export class AutorecMenuApplication extends BaseApp {
         (this as any).render?.();
     }
 
-    private _attachListeners(root: HTMLElement): void {
+    private _attachListeners(root: HTMLElement, isUnfilled: boolean = false): void {
         const searchInput = root.querySelector('#bam-search-input') as HTMLInputElement | null;
         searchInput?.addEventListener('input', (ev) => {
             this._searchFilter = (ev.target as HTMLInputElement).value;
@@ -572,31 +608,77 @@ export class AutorecMenuApplication extends BaseApp {
             });
         });
 
-        // Drag & Drop handlers on the dropzone and inspector panel
-        const dropTargets = [
-            root.querySelector('#bam-actor-dropzone'),
-            root.querySelector('.bam-autorec-inspector')
-        ].filter(Boolean) as HTMLElement[];
+        // Start Manual Setup button inside unfilled template screen
+        root.querySelector('#bam-start-manual-btn')?.addEventListener('click', () => {
+            this._pendingName = 'Custom Multiattack Template';
+            this._pendingPattern = '<ACTOR> makes two attacks: one with its <ITEM_0> and one with its <ITEM_1>.';
+            this._pendingType = 'template';
+            this._workingSequence = [[['<ITEM_0>', '<ITEM_1>']]];
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (this as any).render?.();
+        });
 
         const dropZoneEl = root.querySelector('#bam-actor-dropzone') as HTMLElement | null;
+        const addBtnEl = root.querySelector('#bam-add-template-btn') as HTMLElement | null;
+        const inspectorEl = root.querySelector('.bam-autorec-inspector') as HTMLElement | null;
 
-        dropTargets.forEach((target) => {
-            target.addEventListener('dragover', (ev: DragEvent) => {
+        // Allow dropping an Actor directly onto the "+ Add Template" button at any time
+        if (addBtnEl) {
+            addBtnEl.addEventListener('dragover', (ev: DragEvent) => {
                 ev.preventDefault();
-                if (ev.dataTransfer) {
-                    ev.dataTransfer.dropEffect = 'copy';
+                if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'copy';
+            });
+            addBtnEl.addEventListener('drop', async (ev: DragEvent) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                const rawData = ev.dataTransfer?.getData('text/plain');
+                if (!rawData) return;
+                try {
+                    const data = JSON.parse(rawData) as Record<string, unknown>;
+                    const actor = await adapter.resolveActorFromDropData(data);
+                    if (!actor) return;
+                    const created = await autorecManager.registerEntry({
+                        id: '',
+                        name: 'New Template',
+                        type: 'template',
+                        pattern: '',
+                        sequence: [],
+                        enabled: true
+                    });
+                    this._selectedId = created.id;
+                    this._droppedActor = null;
+                    await this.handleActorDrop(actor, 'template');
+                } catch (_err) {
+                    notify.warn('Invalid drag-and-drop payload.');
                 }
-                dropZoneEl?.classList.add('dragover');
+            });
+        }
+
+        // Handle Drag & Drop on the inspector panel: ONLY allow drop if template is unfilled or already in droppedActor state
+        if (inspectorEl) {
+            inspectorEl.addEventListener('dragover', (ev: DragEvent) => {
+                ev.preventDefault();
+                if (isUnfilled || this._droppedActor) {
+                    if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'copy';
+                    dropZoneEl?.classList.add('dragover');
+                } else {
+                    if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'none';
+                }
             });
 
-            target.addEventListener('dragleave', () => {
+            inspectorEl.addEventListener('dragleave', () => {
                 dropZoneEl?.classList.remove('dragover');
             });
 
-            target.addEventListener('drop', async (ev: DragEvent) => {
+            inspectorEl.addEventListener('drop', async (ev: DragEvent) => {
                 ev.preventDefault();
                 ev.stopPropagation();
                 dropZoneEl?.classList.remove('dragover');
+
+                if (!isUnfilled && !this._droppedActor) {
+                    notify.info('To prevent overwriting existing templates, click "+ Add Template" first (or drop the Actor directly onto the "+ Add Template" button).');
+                    return;
+                }
 
                 const rawData = ev.dataTransfer?.getData('text/plain');
                 if (!rawData) return;
@@ -613,7 +695,7 @@ export class AutorecMenuApplication extends BaseApp {
                     notify.warn('Invalid drag-and-drop payload.');
                 }
             });
-        });
+        }
 
         // Dropped actor mode switch buttons
         root.querySelector('#bam-drop-mode-template')?.addEventListener('click', () => {
@@ -630,10 +712,10 @@ export class AutorecMenuApplication extends BaseApp {
 
         root.querySelector('#bam-clear-dropped-btn')?.addEventListener('click', () => {
             this._droppedActor = null;
-            this._pendingName = null;
-            this._pendingPattern = null;
-            this._pendingType = null;
-            this._workingSequence = null;
+            this._pendingName = '';
+            this._pendingPattern = '';
+            this._pendingType = 'template';
+            this._workingSequence = [];
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (this as any).render?.();
         });
@@ -823,18 +905,18 @@ export class AutorecMenuApplication extends BaseApp {
         addBtn?.addEventListener('click', async () => {
             const newEntry = await autorecManager.registerEntry({
                 id: '',
-                name: 'New Custom Multiattack Template',
+                name: 'New Template',
                 type: 'template',
-                pattern: '<ACTOR> makes two attacks: one with its <ITEM_0> and one with its <ITEM_1>.',
-                sequence: [[['<ITEM_0>', '<ITEM_1>']]],
+                pattern: '',
+                sequence: [],
                 enabled: true
             });
             this._selectedId = newEntry.id;
-            this._workingSequence = null;
+            this._workingSequence = [];
             this._droppedActor = null;
-            this._pendingName = null;
-            this._pendingPattern = null;
-            this._pendingType = null;
+            this._pendingName = '';
+            this._pendingPattern = '';
+            this._pendingType = 'template';
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (this as any).render?.();
         });
@@ -861,7 +943,9 @@ export class AutorecMenuApplication extends BaseApp {
             if (!nameEl || !patternEl) return;
 
             try {
-                const parsedSeq = this._workingSequence ?? (seqEl ? JSON.parse(seqEl.value) : [[['<ITEM_0>']]]);
+                const parsedSeq = this._workingSequence && this._workingSequence.length > 0
+                    ? this._workingSequence
+                    : (seqEl ? JSON.parse(seqEl.value) : [[['<ITEM_0>']]]);
                 const entryType = this._pendingType ?? (patternEl.value.includes('::') ? 'override' : 'template');
                 await autorecManager.registerEntry({
                     id: this._selectedId,
@@ -871,6 +955,7 @@ export class AutorecMenuApplication extends BaseApp {
                     sequence: parsedSeq,
                     enabled: true
                 });
+                this._droppedActor = null;
                 this._pendingName = null;
                 this._pendingPattern = null;
                 this._pendingType = null;
@@ -915,4 +1000,5 @@ export class AutorecMenuApplication extends BaseApp {
         return { template, itemMap, sequence };
     }
 }
+
 
