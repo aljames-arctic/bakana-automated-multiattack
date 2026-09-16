@@ -278,7 +278,6 @@ export class AutorecMenuApplication extends BaseApp {
         const sidebarItemsHtml = entries.map((e) => `
             <div class="bam-sidebar-item ${e.id === selected?.id ? 'active' : ''}" data-entry-id="${e.id}">
                 <span>${e.name}</span>
-                <span style="font-size: 0.7rem; opacity: 0.7;">${e.type === 'override' ? 'Override' : 'Template'}</span>
             </div>
         `).join('');
 
