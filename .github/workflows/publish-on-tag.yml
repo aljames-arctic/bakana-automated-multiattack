@@ -1,0 +1,119 @@
+name: Create Module Files For GitHub Release
+
+env:
+  project_url: "https://github.com/${{github.repository}}"
+  release_manifest_url: "https://github.com/${{github.repository}}/releases/latest/download/module.json"
+
+on:
+  release:
+    types: [published]
+  push:
+    tags:
+      - 'v*'
+      - '[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name to release (e.g. v1.0.0)'
+        required: false
+        default: ''
+
+jobs:
+  publish-module:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: read
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.event.inputs.tag_name || github.ref_name }}
+
+      - name: Extract Version and Tag
+        id: get_version
+        run: |
+          TAG="${{ github.event.release.tag_name || github.event.inputs.tag_name || github.ref_name }}"
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+          IS_PRERELEASE="false"
+          MAKE_LATEST="true"
+          if [[ "$TAG" =~ -(alpha|beta|rc).*$ ]] || [[ "${{ github.event.release.prerelease }}" == "true" ]]; then
+            IS_PRERELEASE="true"
+            MAKE_LATEST="false"
+          fi
+          echo "prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+          echo "make_latest=$MAKE_LATEST" >> $GITHUB_OUTPUT
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Type Check & Tests
+        run: |
+          npm run typecheck
+          npm test
+
+      - name: Build Module
+        run: npm run build
+
+      - name: Modify Module Manifest With Release-Specific Values
+        env:
+          REL_VERSION: ${{ steps.get_version.outputs.version }}
+          PROJECT_URL: ${{ env.project_url }}
+          MANIFEST_URL: ${{ env.release_manifest_url }}
+          DOWNLOAD_URL: "https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.tag }}/module.zip"
+        run: |
+          node -e '
+            const fs = require("fs");
+            let manifest = fs.readFileSync("module.json", "utf8");
+            manifest = manifest.replace(/#\{VERSION\}#/g, process.env.REL_VERSION);
+            manifest = manifest.replace(/#\{URL\}#/g, process.env.PROJECT_URL);
+            manifest = manifest.replace(/#\{MANIFEST\}#/g, process.env.MANIFEST_URL);
+            manifest = manifest.replace(/#\{DOWNLOAD\}#/g, process.env.DOWNLOAD_URL);
+            fs.writeFileSync("module.json", manifest);
+          '
+
+      - name: Validate Module Manifest
+        run: |
+          node -e '
+            const fs = require("fs");
+            const manifest = JSON.parse(fs.readFileSync("module.json", "utf8"));
+            console.log("Validated manifest:", manifest.id, "version:", manifest.version);
+            if (manifest.version.includes("#{")) {
+              throw new Error("Version token was not replaced in module.json!");
+            }
+          '
+
+      - name: Create Module Archive
+        run: |
+          zip -r ./module.zip \
+            dist/ \
+            src/ \
+            styles/ \
+            lang/ \
+            LICENSE \
+            README.md \
+            module.json
+
+      - name: Update Release With Files
+        id: create_version_release
+        uses: ncipollo/release-action@v1
+        with:
+          allowUpdates: true
+          name: ${{ github.event.release.name || steps.get_version.outputs.tag }}
+          draft: ${{ github.event.release.unpublished || false }}
+          prerelease: ${{ steps.get_version.outputs.prerelease }}
+          makeLatest: ${{ steps.get_version.outputs.make_latest }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          artifacts: './module.json, ./module.zip'
+          tag: ${{ steps.get_version.outputs.tag }}
+          body: ${{ github.event.release.body || '' }}

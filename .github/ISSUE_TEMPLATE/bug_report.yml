@@ -1,0 +1,77 @@
+name: Bug Report
+description: Report a bug or unexpected behavior with automated multiattacks or autorecognition parsing.
+title: "[Bug]: <Short description>"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time to report a bug with Bakana's Automated Multiattack! Please fill out the form below to help us reproduce and fix the issue.
+
+  - type: input
+    id: system
+    attributes:
+      label: Game System & Version
+      description: What game system are you running, and what is its version?
+      placeholder: e.g., dnd5e v4.1.2 or pf2e v6.1.2
+    validations:
+      required: true
+
+  - type: input
+    id: foundry_version
+    attributes:
+      label: Foundry VTT Version
+      description: Which version and build of Foundry VTT are you using?
+      placeholder: e.g., V12 Build 331 or V14 Build 341
+    validations:
+      required: true
+
+  - type: textarea
+    id: active_modules
+    attributes:
+      label: Relevant Active Modules
+      description: List any active modules that might interact with combat or workflow automation (especially Midi-QOL, Bakana's Action Display, etc.).
+      placeholder: e.g., midi-qol v11.4.25, bakanas-action-display v1.0.0, etc.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: troubleshooting
+    attributes:
+      label: Basic Troubleshooting
+      description: Have you tried testing with only Bakana's Automated Multiattack active to see if the issue persists?
+      options:
+        - "Yes, and the bug still occurs in a clean environment"
+        - "No, I cannot disable other modules right now"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description of the Bug
+      description: A clear and concise description of what the bug is and what you expected to happen (e.g., multiattack text parsing, item matching, sequence execution).
+      placeholder: Describe what is happening...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction_steps
+    attributes:
+      label: Steps to Reproduce
+      description: Explain exactly how we can reproduce the bug, step-by-step.
+      placeholder: |
+        1. Roll Multiattack on actor...
+        2. Observe chat card...
+        3. Click option...
+    validations:
+      required: true
+
+  - type: textarea
+    id: console_errors
+    attributes:
+      label: Console Errors / Logs
+      description: If applicable, press F12, open the console, and paste any red error logs or '[bakana-automated-multiattack]' debug logs here.
+      placeholder: Paste console errors or BAM trace logs here...
+    validations:
+      required: false

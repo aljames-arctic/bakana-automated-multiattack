@@ -1,0 +1,50 @@
+name: Feature Request
+description: Suggest an idea, improvement, or new multiattack automation feature.
+title: "[Feature]: <Short description>"
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea to make Bakana's Automated Multiattack even better? We'd love to hear it!
+        
+        Please describe your suggestion below.
+  
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Feature Scope
+      description: Is this feature core (system-agnostic sequence/UI) or specific to a particular game system/module?
+      options:
+        - "Core Multiattack (System-agnostic / applies to all systems)"
+        - "System-specific (e.g., D&D 5e, PF2e)"
+        - "Module-specific (e.g., Midi-QOL, Bakana's Action Display)"
+    validations:
+      required: true
+
+  - type: input
+    id: target
+    attributes:
+      label: Target System / Module (If applicable)
+      description: If this is system or module-specific, please specify which one.
+      placeholder: e.g., D&D 5e or Midi-QOL
+    validations:
+      required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description of the Feature
+      description: Describe the feature or improvement you would like to see in detail.
+      placeholder: Explain your idea...
+    validations:
+      required: true
+
+  - type: textarea
+    id: rationale
+    attributes:
+      label: Use Case / Rationale
+      description: Why would this feature be useful? How does it improve multiattack automation or workflow speed?
+      placeholder: Explain why this is important...
+    validations:
+      required: true

@@ -1,0 +1,19 @@
+# Dependency directories
+node_modules/
+dist/
+
+# IDEs and editors
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Antigravity agents customizations directory
+.agents/
