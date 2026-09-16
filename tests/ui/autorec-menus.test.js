@@ -107,7 +107,7 @@ test('Drag & Drop Actor auto-fill resolves Actor from drop payload and extracts 
             ['ab-item', {
                 id: 'ab-item',
                 name: 'Arcane Burst',
-                system: { actionType: 'msak' }
+                system: { activities: [{ attack: { type: { value: 'melee', classification: 'spell' } } }] }
             }]
         ])
     };
@@ -173,7 +173,7 @@ test('Dropping a monster whose general template exists defaults to Monster Overr
             ['wt-item', {
                 id: 'wt-item',
                 name: 'Withering Touch',
-                system: { actionType: 'mwak' }
+                system: { activities: [{ attack: { type: { value: 'melee', classification: 'weapon' } } }] }
             }]
         ])
     };
@@ -257,8 +257,8 @@ test('LLM fallback stores output in LLM Generated section and supports one-click
                     }
                 }
             }],
-            ['fang-item', { id: 'fang-item', name: 'Temporal Fang', system: { actionType: 'mwak' } }],
-            ['claw-item', { id: 'claw-item', name: 'Void Claw', system: { actionType: 'mwak' } }]
+            ['fang-item', { id: 'fang-item', name: 'Temporal Fang', system: { activities: [{ attack: { type: { value: 'melee', classification: 'weapon' } } }] } }],
+            ['claw-item', { id: 'claw-item', name: 'Void Claw', system: { activities: [{ attack: { type: { value: 'melee', classification: 'weapon' } } }] } }]
         ])
     };
 

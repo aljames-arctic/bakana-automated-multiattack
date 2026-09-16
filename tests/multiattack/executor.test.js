@@ -204,13 +204,17 @@ test('getMatchingCategoryItems and actorHasAttackOption support spell attack, an
         id: 'slash-id',
         name: 'Slash',
         type: 'weapon',
-        system: { actionType: 'mwak' }
+        system: {
+            activities: [{ attack: { type: { value: 'melee', classification: 'weapon' } } }]
+        }
     };
     const fireBoltItem = {
         id: 'firebolt-id',
         name: 'Fire Bolt',
         type: 'spell',
-        system: { actionType: 'rsak' }
+        system: {
+            activities: [{ attack: { type: { value: 'ranged', classification: 'spell' } } }]
+        }
     };
     const customActor = {
         id: 'custom-actor',

@@ -15,12 +15,7 @@ export class Dnd5eSystemAdapter extends BaseSystemAdapter {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const sys = (item as any).system ?? {};
 
-        // 1. Direct system.actionType
-        if (sys.actionType && ['mwak', 'rwak', 'msak', 'rsak'].includes(sys.actionType)) {
-            return sys.actionType;
-        }
-
-        // 2. Modern D&D 5e v4+ Activities inspection
+        // Modern D&D 5e v4+ Activities inspection
         const activities = sys.activities;
         if (activities) {
             const actList = activities.contents ?? (activities.values ? Array.from(activities.values()) : Object.values(activities));
