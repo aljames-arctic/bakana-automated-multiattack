@@ -209,7 +209,7 @@ export function registerModuleSettings(): void {
         scope: 'client',
         config: true,
         type: Boolean,
-        default: true
+        default: false
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
 

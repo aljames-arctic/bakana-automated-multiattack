@@ -409,7 +409,7 @@ export async function executeSectionOptionMap(
             break;
         }
 
-        const autoSelectSingle = game.settings?.get(MODULE_ID, 'autoSelectSingleOption') !== false;
+        const autoSelectSingle = Boolean(game.settings?.get(MODULE_ID, 'autoSelectSingleOption'));
         let selectedToken: string | null = null;
 
         // Auto-select if there is only 1 unique choice and no optional finish branch

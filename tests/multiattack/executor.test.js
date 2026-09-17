@@ -360,12 +360,15 @@ test('cancelling or skipping an optional sub-activity selection step (__SKIP__) 
 
     let promptIndex = 0;
     const origSelectDialog = adapter.selectOptionDialog;
-    adapter.selectOptionDialog = async () => {
+    adapter.selectOptionDialog = async (options) => {
         promptIndex++;
-        if (promptIndex === 1) {
+        if (promptIndex === 2) {
             return '__SKIP__';
         }
-        return 'Flail:Activity2:1';
+        if (promptIndex === 4) {
+            return 'Flail:Activity2:1';
+        }
+        return options[0]?.value ?? 'Flail';
     };
 
     try {
