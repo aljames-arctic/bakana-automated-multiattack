@@ -1,0 +1,34 @@
+{
+  "BAM": {
+    "title": "Attaques Multiples Automatisées de Bakana",
+    "grammar": {
+      "multiattackNames": "Attaques multiples, Attaque multiple, Multiattack",
+      "meleeKeywords": "attaque au corps à corps, attaques au corps à corps",
+      "rangedKeywords": "attaque à distance, attaques à distance",
+      "attackSuffixes": "attaque, attaques",
+      "subjectArticles": "le, la, l'",
+      "subjectPronouns": "il, elle",
+      "possessiveKeywords": "son, sa, ses, leur, leurs",
+      "actionVerbs": "effectue, peut utiliser, utilise, attaque, a, fait",
+      "thenDelimiters": "puis, ensuite",
+      "orDelimiters": "ou",
+      "canUseKeywords": "peut utiliser, utilise",
+      "replaceKeywords": "peut remplacer",
+      "replaceWithKeywords": "par, avec",
+      "conditionIfKeywords": "si",
+      "bonusAlsoKeywords": "peut également effectuer, peut aussi effectuer, peut également faire",
+      "numbers": {
+        "1": "un, une",
+        "2": "deux",
+        "3": "trois",
+        "4": "quatre",
+        "5": "cinq",
+        "6": "six",
+        "7": "sept",
+        "8": "huit",
+        "9": "neuf",
+        "10": "dix"
+      }
+    }
+  }
+}

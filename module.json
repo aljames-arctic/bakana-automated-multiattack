@@ -1,0 +1,44 @@
+{
+  "id": "bakana-automated-multiattack",
+  "title": "Bakana's Automated Multiattack",
+  "description": "Automates D&D 5e monster and NPC multiattacks with weapon/item name abstraction, central autorecognition templates, chat card activation, and native item execution.",
+  "version": "#{VERSION}#",
+  "compatibility": {
+    "minimum": "12",
+    "verified": "14"
+  },
+  "authors": [
+    {
+      "name": "Bakana",
+      "url": "https://github.com/aljames-arctic"
+    }
+  ],
+  "esmodules": [
+    "dist/module.js"
+  ],
+  "styles": [
+    "styles/bakana-automated-multiattack.css"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    },
+    {
+      "lang": "de",
+      "name": "Deutsch (German)",
+      "path": "lang/de.json"
+    },
+    {
+      "lang": "fr",
+      "name": "Français (French)",
+      "path": "lang/fr.json"
+    }
+  ],
+  "url": "#{URL}#",
+  "manifest": "#{MANIFEST}#",
+  "download": "#{DOWNLOAD}#",
+  "license": "LICENSE",
+  "readme": "README.md"
+}

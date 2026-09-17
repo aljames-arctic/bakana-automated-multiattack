@@ -1,0 +1,436 @@
+import { getLocalizedGrammar, escapeRegExp, isLocalizedMultiattackName, type LocalizedGrammar } from './grammar.js';
+import { adapter } from '../adapter/index.js';
+import type { AbstractedMultiattack, MultiattackSequence } from '../types/global.d.js';
+
+/**
+ * Generates surface form variations for an item name to match inside natural language descriptions,
+ * respecting localized attack suffixes (e.g., "attack", "angriff", "attaque").
+ * @param {string} rawName Item name from Actor sheet
+ * @param {LocalizedGrammar} [grammar] Optional pre-resolved localized grammar
+ * @returns {string[]} Array of lowercase surface forms sorted longest-first
+ */
+export function getItemSurfaceForms(rawName: string, grammar: LocalizedGrammar = getLocalizedGrammar()): string[] {
+    const clean = rawName.trim().toLowerCase();
+    if (!clean || isLocalizedMultiattackName(clean)) return [];
+
+    const forms = new Set<string>();
+    forms.add(clean);
+
+    // Build suffix removal pattern from localized attackSuffixes
+    const suffixAlternation = grammar.attackSuffixes
+        .map((s) => escapeRegExp(s.toLowerCase()))
+        .sort((a, b) => b.length - a.length)
+        .join('|');
+    const suffixRegex = suffixAlternation ? new RegExp(`[\\s-]+(?:${suffixAlternation})$`, 'i') : null;
+
+    const withoutAttack = suffixRegex ? clean.replace(suffixRegex, '').trim() : clean;
+    if (withoutAttack) {
+        forms.add(withoutAttack);
+        if (withoutAttack.endsWith('ies')) {
+            forms.add(withoutAttack.slice(0, -3) + 'y');
+        } else if (withoutAttack.endsWith('es') && withoutAttack.length > 3) {
+            forms.add(withoutAttack.slice(0, -2));
+            forms.add(withoutAttack.slice(0, -1));
+        } else if (withoutAttack.endsWith('en') && withoutAttack.length > 3) {
+            // German plural handling (e.g. "Klauen" -> "Klaue")
+            forms.add(withoutAttack.slice(0, -1));
+            forms.add(withoutAttack.slice(0, -2));
+        } else if (withoutAttack.endsWith('s') && withoutAttack.length > 2) {
+            forms.add(withoutAttack.slice(0, -1));
+        } else {
+            forms.add(withoutAttack + 's');
+            forms.add(withoutAttack + 'es');
+            forms.add(withoutAttack + 'en');
+            forms.add(withoutAttack + 'n');
+        }
+    }
+
+    return Array.from(forms).sort((a, b) => b.length - a.length);
+}
+
+/**
+ * Resolves a D&D 5e v4+ enricher item reference (e.g. `.mmArcaneBurst000` in `[[/item .mmArcaneBurst000]]`
+ * or `@UUID[...Item.mmArcaneBurst000]{Arcane Burst}`) against the actor's inventory items.
+ */
+export function resolveEnricherItemName(
+    rawTarget: string,
+    explicitLabel: string | undefined,
+    actorItems: Item[],
+    grammar: LocalizedGrammar = getLocalizedGrammar()
+): string {
+    const validItems = (actorItems ?? []).filter((i) => i?.name && !isLocalizedMultiattackName(i.name));
+
+    // 1. If an explicit {label} was provided on the enricher tag, check if it matches an actor item
+    if (explicitLabel && explicitLabel.trim()) {
+        const cleanLabel = explicitLabel.trim();
+        const lowerLabel = cleanLabel.toLowerCase();
+        const exact = validItems.find((i) => i.name.trim().toLowerCase() === lowerLabel);
+        if (exact) return exact.name.trim();
+        for (const item of validItems) {
+            if (getItemSurfaceForms(item.name, grammar).includes(lowerLabel)) {
+                return item.name.trim();
+            }
+        }
+        return cleanLabel;
+    }
+
+    // 2. Clean raw target (e.g. ".mmArcaneBurst000", "Compendium.dnd5e.items.Item.mmArcaneBurst000", "id=mmArcaneBurst000")
+    const parts = rawTarget.trim().split('.');
+    const lastSegment = (parts[parts.length - 1] ?? rawTarget).replace(/^id=/i, '').trim();
+
+    if (lastSegment) {
+        // 2a. Match by exact item ID / _id / sourceId on the actor
+        const byId = validItems.find((i) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const anyItem = i as any;
+            const itemId = String(i.id ?? anyItem._id ?? '');
+            const sourceId = String(anyItem.flags?.dnd5e?.sourceId ?? anyItem._stats?.compendiumSource ?? '');
+            return (
+                itemId === lastSegment ||
+                sourceId.endsWith(`.${lastSegment}`) ||
+                i.name.trim().toLowerCase() === lastSegment.toLowerCase()
+            );
+        });
+        if (byId) return byId.name.trim();
+
+        // 2b. Decode D&D 5e 2024 MM / compendium camelCase IDs (e.g. "mmArcaneBurst000" -> "Arcane Burst")
+        const strippedPrefix = lastSegment
+            .replace(/^(?:mm|phb|dmg|srd|monster|npc)(?=[A-Z])/i, '')
+            .replace(/\d+$/, '');
+        const decodedName = strippedPrefix
+            .replace(/([a-z])([A-Z])/g, '$1 $2')
+            .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+            .trim();
+
+        if (decodedName) {
+            const lowerDecoded = decodedName.toLowerCase();
+            const byDecoded = validItems.find((i) => i.name.trim().toLowerCase() === lowerDecoded);
+            if (byDecoded) return byDecoded.name.trim();
+
+            for (const item of validItems) {
+                if (getItemSurfaceForms(item.name, grammar).includes(lowerDecoded)) {
+                    return item.name.trim();
+                }
+            }
+            return decodedName;
+        }
+    }
+
+    return rawTarget.trim();
+}
+
+/**
+ * Abstracts a Multiattack natural language description in any localized language (`localize('BAM.grammar.*')`)
+ * by replacing creature subject references with `<ACTOR>` and actor item/weapon names with ordered
+ * `<ITEM_0>`, `<ITEM_1>`, etc. placeholders.
+ *
+ * @param {string} description Raw or cleaned Multiattack description text
+ * @param {Item[]} actorItems Array of Item documents belonging to the actor
+ * @param {string} [actorName=''] Optional name of the actor
+ * @returns {AbstractedMultiattack}
+ */
+export function abstractMultiattackDescription(
+    description: string,
+    actorItems: Item[],
+    actorName: string = ''
+): AbstractedMultiattack {
+    if (!description) {
+        return { template: '', itemMap: {}, reverseMap: {} };
+    }
+
+    const grammar = getLocalizedGrammar();
+
+    // 1. Clean HTML and normalize whitespace
+    let text = description
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&ndash;/gi, '-')
+        .replace(/&mdash;/gi, '-')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const articlesAlternation = grammar.subjectArticles
+        .map((a) => escapeRegExp(a))
+        .sort((a, b) => b.length - a.length)
+        .join('|');
+    const articlePrefix = articlesAlternation ? `(?:(?:${articlesAlternation})\\s+)?` : '(?:the\\s+)?';
+
+    // 1b. Resolve D&D 5e v4+ Enrichers ([[lookup @name]], [[/item .mmArcaneBurst000]], @UUID[...])
+    text = text.replace(
+        new RegExp(`${articlePrefix}\\[\\[\\s*lookup\\s+@name[^\\]]*\\]\\](?:\\{[^}]*\\})?`, 'giu'),
+        '<ACTOR>'
+    );
+    text = text.replace(
+        /\[\[\s*\/item\s+([^\]]+?)\s*\]\](?:\{([^}]*)\})?/giu,
+        (_match, target: string, label?: string) => resolveEnricherItemName(target, label, actorItems, grammar)
+    );
+    text = text.replace(
+        /@(?:UUID|Compendium)\[([^\]]+)\](?:\{([^}]*)\})?/giu,
+        (_match, target: string, label?: string) => resolveEnricherItemName(target, label, actorItems, grammar)
+    );
+
+    // 2. Replace explicit actor name if provided
+    if (actorName && actorName.trim().length > 1) {
+        const cleanActor = actorName.trim();
+        const escapedActor = escapeRegExp(cleanActor);
+        text = text.replace(new RegExp(`\\b${articlePrefix}${escapedActor}\\b`, 'giu'), '<ACTOR>');
+
+        // Also handle last word of multi-word actor names (e.g., "Adult Red Dragon" -> "the dragon", "Roter Drache" -> "der Drache")
+        const words = cleanActor.split(/\s+/);
+        if (words.length > 1) {
+            const lastWord = words[words.length - 1];
+            if (lastWord && lastWord.length > 2) {
+                text = text.replace(new RegExp(`\\b(?:${articlesAlternation})\\s+${escapeRegExp(lastWord)}\\b`, 'giu'), '<ACTOR>');
+            }
+        }
+    }
+
+    // 3. Replace localized creature subject phrases before localized action verbs (e.g., "The bear makes", "Der Bär führt", "Le capitaine effectue")
+    text = text.replace(grammar.actorSubjectRegex, '<ACTOR>');
+
+    // Normalize localized pronoun + "then" after sentence boundaries to "<ACTOR> <thenDelimiter>"
+    const primaryThen = grammar.thenDelimiters[0] ?? 'then';
+    text = text.replace(grammar.pronounThenRegex, `$1<ACTOR> ${primaryThen}`);
+
+    // 4. Identify candidate items on the actor (excluding Multiattack / Mehrfachangriff / etc.)
+    const validItems = (actorItems ?? []).filter((item: Item) => {
+        const name = item?.name?.trim();
+        return Boolean(name && !isLocalizedMultiattackName(name));
+    });
+
+    interface MatchCandidate {
+        canonicalName: string;
+        form: string;
+        regex: RegExp;
+    }
+
+    const candidates: MatchCandidate[] = [];
+    for (const item of validItems) {
+        const canonicalName = item.name.trim();
+        const forms = getItemSurfaceForms(canonicalName, grammar);
+        for (const form of forms) {
+            candidates.push({
+                canonicalName,
+                form,
+                regex: new RegExp(`\\b${escapeRegExp(form)}\\b`, 'iu')
+            });
+        }
+    }
+
+    candidates.sort((a, b) => b.form.length - a.form.length);
+
+    // Find first appearance index in `text` for each distinct canonical item
+    const firstAppearance = new Map<string, number>();
+    for (const cand of candidates) {
+        const match = cand.regex.exec(text);
+        if (match && match.index !== undefined) {
+            const existingIdx = firstAppearance.get(cand.canonicalName);
+            if (existingIdx === undefined || match.index < existingIdx) {
+                firstAppearance.set(cand.canonicalName, match.index);
+            }
+        }
+    }
+
+    // Order distinct matched items by their first appearance position in the text
+    const orderedCanonicalNames = Array.from(firstAppearance.entries())
+        .sort((a, b) => a[1] - b[1])
+        .map((entry) => entry[0]);
+
+    const itemMap: Record<string, string> = {};
+    const reverseMap: Record<string, string> = {};
+    const canonicalToPlaceholder = new Map<string, string>();
+
+    orderedCanonicalNames.forEach((canonicalName, idx) => {
+        const placeholder = `<ITEM_${idx}>`;
+        itemMap[placeholder] = canonicalName;
+        reverseMap[canonicalName.toLowerCase()] = placeholder;
+        canonicalToPlaceholder.set(canonicalName, placeholder);
+    });
+
+    // Replace all occurrences of matched items in the text (longest forms first)
+    for (const cand of candidates) {
+        const placeholder = canonicalToPlaceholder.get(cand.canonicalName);
+        if (!placeholder) continue;
+        const globalRegex = new RegExp(`\\b${escapeRegExp(cand.form)}\\b`, 'giu');
+        text = text.replace(globalRegex, placeholder);
+    }
+
+    text = text.replace(/\s+/g, ' ').trim();
+
+    return {
+        template: text,
+        itemMap,
+        reverseMap
+    };
+}
+
+/**
+ * Hydrates an abstracted 3D multiattack sequence containing `<ITEM_N>` placeholders back into
+ * concrete item names using the actor's `itemMap`.
+ * @param {MultiattackSequence} templateSequence 3D array with `<ITEM_N>` placeholders
+ * @param {Record<string, string>} itemMap Mapping from `<ITEM_N>` to concrete item names
+ * @returns {MultiattackSequence} Concrete 3D sequence array
+ */
+export function hydrateMultiattackSequence(
+    templateSequence: MultiattackSequence,
+    itemMap: Record<string, string>
+): MultiattackSequence {
+    if (!Array.isArray(templateSequence)) return [];
+    return templateSequence.map((section) =>
+        (Array.isArray(section) ? section : []).map((optionFlow) =>
+            (Array.isArray(optionFlow) ? optionFlow : []).map((token) => {
+                const trimmed = String(token ?? '').trim();
+                if (!trimmed) return trimmed;
+                // Hydrate all occurrences of <ITEM_N> placeholders inside the token string
+                const hydrated = trimmed.replace(/<ITEM_(\d+)>/gi, (match) => {
+                    const key = match.toUpperCase();
+                    return itemMap[key] ?? itemMap[match] ?? match;
+                });
+                return hydrated;
+            })
+        )
+    );
+}
+
+/**
+ * Resolves a concrete Item document on an Actor from an attack selection string.
+ * Supports exact matching, plural/singular variations, and stripping localized attack suffixes.
+ * @param {Actor} actor Concrete Actor document
+ * @param {string} selection Selected attack or item name
+ * @returns {Item | null}
+ */
+export function resolveActorItem(actor: Actor, selection: string): Item | null {
+    if (!actor?.items || !selection) return null;
+    const clean = selection.trim().toLowerCase();
+    const items = adapter.getActorItems(actor);
+    const grammar = getLocalizedGrammar();
+
+    const suffixAlternation = grammar.attackSuffixes
+        .map((s) => escapeRegExp(s.toLowerCase()))
+        .sort((a, b) => b.length - a.length)
+        .join('|');
+    const suffixRegex = suffixAlternation ? new RegExp(`[\\s-]+(?:${suffixAlternation})$`, 'i') : null;
+    const stripped = suffixRegex ? clean.replace(suffixRegex, '').trim() : clean;
+
+    // 1. Exact case-insensitive match (raw or suffix-stripped)
+    let found = items.find((i: Item) => {
+        const nameLower = i.name.trim().toLowerCase();
+        return nameLower === clean || (stripped && nameLower === stripped);
+    });
+    if (found) return found;
+
+    // 2. Match using surface forms generated for each actor item
+    for (const item of items) {
+        const forms = getItemSurfaceForms(item.name, grammar);
+        if (forms.includes(clean) || (stripped && forms.includes(stripped))) {
+            return item;
+        }
+    }
+
+    return null;
+}
+
+export interface ItemActivityRef {
+    id: string;
+    name: string;
+    type?: string;
+    isPrimary?: boolean;
+}
+
+/**
+ * Discovers secondary/optional sub-activities on an Item document (such as Yeenoghu's Flail per-turn activities).
+ */
+/**
+ * Discovers secondary/optional sub-activities on an Item document (such as Yeenoghu's Flail per-turn activities).
+ * If `filterText` (item or feature description) is provided and contains matches for specific activity names,
+ * filters the returned activities to only those referenced in the description text.
+ */
+export function getItemSecondaryActivities(item: Item, filterText?: string): ItemActivityRef[] {
+    if (!item) return [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sys = (item as any).system;
+    if (!sys || !sys.activities) return [];
+
+    const activities = sys.activities;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const actList: any[] = activities.contents
+        ?? (typeof activities.values === 'function' ? Array.from(activities.values()) : (Array.isArray(activities) ? activities : Object.values(activities)));
+
+    if (!actList || actList.length <= 1) return [];
+
+    // Primary activity is usually an 'attack' activity or the first activity
+    const primary = actList.find((a: any) => a?.type === 'attack') ?? actList[0];
+
+    const allSecondaries: ItemActivityRef[] = [];
+    for (const act of actList) {
+        if (!act) continue;
+        const isPrimaryId = Boolean(primary?.id && act.id === primary.id);
+        const isPrimarySubId = Boolean(primary?._id && act._id === primary._id);
+        if (isPrimaryId || isPrimarySubId) continue;
+        const name = String(act.name ?? act.label ?? '').trim();
+        if (name) {
+            allSecondaries.push({
+                id: String(act.id ?? act._id ?? name),
+                name,
+                type: act.type
+            });
+        }
+    }
+
+    if (allSecondaries.length === 0) return [];
+
+    // Filter against description text if available
+    const textToSearch = [filterText, sys.description?.value].filter(Boolean).join(' ').toLowerCase();
+    if (textToSearch.trim()) {
+        const textMatched = allSecondaries.filter((sec) => {
+            const secName = sec.name.toLowerCase();
+            return secName.length > 1 && textToSearch.includes(secName);
+        });
+        if (textMatched.length > 0) {
+            return textMatched;
+        }
+    }
+
+    return allSecondaries;
+}
+
+/**
+ * Automatically discovers secondary sub-activities on items referenced in a multiattack sequence
+ * (e.g. Yeenoghu's Flail per-turn effects) and interleaves choice steps into the sequence if not already present.
+ */
+export function enrichSequenceWithDiscoveredSubActivities(
+    sequence: MultiattackSequence,
+    actor: Actor,
+    filterText?: string
+): MultiattackSequence {
+    if (!Array.isArray(sequence) || !actor) return sequence;
+
+    return sequence.map((section) =>
+        (Array.isArray(section) ? section : []).map((optionFlow) => {
+            const enrichedFlow: string[] = [];
+            for (let i = 0; i < optionFlow.length; i++) {
+                const token = optionFlow[i] ?? '';
+                enrichedFlow.push(token);
+
+                // Don't duplicate if next token is already a choice group or activity reference
+                const nextToken = optionFlow[i + 1] ?? '';
+                if (nextToken.includes(':') || nextToken.includes('(')) continue;
+
+                // Resolve actor item from current token
+                const cleanToken = token.replace(/^[>-]+\s*/, '').trim();
+                const item = resolveActorItem(actor, cleanToken);
+                if (!item) continue;
+
+                const secondaries = getItemSecondaryActivities(item, filterText);
+                if (secondaries.length > 0) {
+                    const choices = secondaries
+                        .map((sec) => `${item.name.trim()}:${sec.name}:1`)
+                        .join(' | ');
+                    enrichedFlow.push(`>(${choices})`);
+                }
+            }
+            return enrichedFlow;
+        })
+    );
+}

@@ -1,0 +1,136 @@
+{
+  "BAM": {
+    "title": "Bakana's Automated Multiattack",
+    "grammar": {
+      "multiattackNames": "Multiattack",
+      "meleeKeywords": "melee attack, melee attacks",
+      "rangedKeywords": "ranged attack, ranged attacks",
+      "attackSuffixes": "attack, attacks",
+      "subjectArticles": "the, this",
+      "subjectPronouns": "it, he, she, they",
+      "possessiveKeywords": "its, his, her, their",
+      "actionVerbs": "makes, can use, uses, attacks, casts, has, also makes",
+      "thenDelimiters": "then",
+      "orDelimiters": "or",
+      "canUseKeywords": "can use, uses",
+      "replaceKeywords": "can replace",
+      "replaceWithKeywords": "with",
+      "conditionIfKeywords": "if, when",
+      "bonusAlsoKeywords": "can also make, also makes",
+      "numbers": {
+        "1": "a, an, one",
+        "2": "two",
+        "3": "three",
+        "4": "four",
+        "5": "five",
+        "6": "six",
+        "7": "seven",
+        "8": "eight",
+        "9": "nine",
+        "10": "ten"
+      }
+    },
+    "settingsSections": {
+      "world": "World Settings",
+      "user": "User Settings",
+      "client": "Client Settings"
+    },
+    "settings": {
+      "autorecMenu": {
+        "name": "Multiattack Autorecognition Menu",
+        "label": "Configure Multiattacks",
+        "hint": "Open the central autorecognition menu to inspect, edit, or test recognized multiattack templates and monster overrides."
+      },
+      "autorecExchangeMenu": {
+        "name": "Import / Export Multiattacks",
+        "label": "Import / Export JSON",
+        "hint": "Import or export central multiattack autorecognition configurations as JSON."
+      },
+      "automatedSupportMenu": {
+        "name": "Automated Support",
+        "label": "Configure Automated Support",
+        "hint": "Configure optional AI / LLM fallback parsing and sequence repair agent settings."
+      },
+      "autoTriggerOnUse": {
+        "name": "Auto-Trigger on Multiattack Activity Use",
+        "hint": "Automatically initiate the multiattack sequence via dnd5e.postUseActivity when a Multiattack feature is used."
+      },
+      "showChatCardButton": {
+        "name": "Show Chat Card Execute Button",
+        "hint": "Inject an 'Execute Multiattack' button onto Multiattack chat cards for manual or repeat activation."
+      },
+      "enableLlmFallback": {
+        "name": "Enable LLM Fallback for Unknown Templates",
+        "hint": "If enabled, unrecognized homebrew multiattack phrasings will be abstracted into <ITEM_N> placeholders and sent to the configured LLM, then cached centrally."
+      },
+      "llmProvider": {
+        "name": "LLM Provider",
+        "hint": "Select the LLM API provider for parsing novel multiattack phrasings.",
+        "choices": {
+          "openai": "OpenAI (GPT-4o / GPT-4o-mini)",
+          "gemini": "Google Gemini",
+          "anthropic": "Anthropic Claude",
+          "custom": "Custom OpenAI-Compatible Endpoint (Ollama / Local)"
+        }
+      },
+      "llmApiKey": {
+        "name": "LLM API Key",
+        "hint": "API key for the selected LLM provider (stored locally or per world). Leave blank if using deterministic parsing or local Ollama without auth."
+      },
+      "llmModel": {
+        "name": "LLM Model Name",
+        "hint": "Model identifier to request (e.g., gpt-4o-mini, gemini-2.5-flash, claude-3-5-haiku-latest)."
+      },
+      "llmEndpoint": {
+        "name": "Custom LLM Endpoint URL",
+        "hint": "Optional custom endpoint URL for OpenAI-compatible servers (e.g., http://localhost:11434/v1/chat/completions)."
+      },
+      "autoSelectSingleOption": {
+        "name": "Auto-Execute Single Attack Options",
+        "hint": "Automatically roll the next attack without prompting when there is only one valid attack option remaining."
+      },
+      "clearTargetsBetweenAttacks": {
+        "name": "Clear Targets Between Attacks",
+        "hint": "Clear user targets after each individual attack in the multiattack sequence."
+      },
+      "logVerbosity": {
+        "name": "Log Verbosity",
+        "hint": "Control console logging detail level for debugging multiattack parsing and execution.",
+        "choices": {
+          "error": "Errors Only",
+          "warn": "Warnings & Errors",
+          "info": "Info, Warnings & Errors",
+          "debug": "Debug (Verbose)"
+        }
+      }
+    },
+    "autorecMenu": {
+      "title": "Bakana's Multiattack Autorecognition Manager",
+      "searchPlaceholder": "Filter templates or monsters (e.g. two attacks, Dragon)...",
+      "addTemplateBtn": "Add Template",
+      "addOverrideBtn": "Add Monster Override",
+      "exportBtn": "Export JSON",
+      "importBtn": "Import JSON",
+      "resetDefaultsBtn": "Reset System Defaults",
+      "saveBtn": "Save Changes",
+      "deleteBtn": "Delete Entry",
+      "testBtn": "Test Description",
+      "tabs": {
+        "templates": "Abstracted Templates",
+        "overrides": "Monster Overrides",
+        "tester": "Live Parser Tester"
+      }
+    },
+    "selectDialog": {
+      "title": "Select Multiattack Option",
+      "subtitle": "Step {step} of {totalSteps} — Choose next attack to execute:",
+      "finishLabel": "Finish Multiattack (Skip Optional)",
+      "meleePromptTitle": "Select Melee Weapon",
+      "rangedPromptTitle": "Select Ranged Weapon",
+      "cancelLabel": "Cancel Sequence"
+    },
+    "chatCard": {
+      "executeBtn": "Execute Multiattack"
+    }
+  }
+}
