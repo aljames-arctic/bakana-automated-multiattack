@@ -409,11 +409,12 @@ export async function executeSectionOptionMap(
             break;
         }
 
+        const isChoiceStep = uniqueTokens.length > 1 || nonEmptyFlows.some((f) => f[0]?.includes('(') || f[0]?.includes('|'));
         const autoSelectSingle = Boolean(game.settings?.get(MODULE_ID, 'autoSelectSingleOption'));
         let selectedToken: string | null = null;
 
-        // Auto-select if there is only 1 unique choice and no optional finish branch
-        if (uniqueTokens.length === 1 && !hasFinishOption && autoSelectSingle) {
+        // Auto-select ONLY for plain non-choice attacks when autoSelectSingle is explicitly enabled AND it is NOT a choice/sub-activity step
+        if (uniqueTokens.length === 1 && !hasFinishOption && !isChoiceStep && autoSelectSingle) {
             selectedToken = uniqueTokens[0] ?? null;
         } else {
             // Build popup select options
@@ -446,8 +447,6 @@ export async function executeSectionOptionMap(
                     badge: maxCount > 1 ? `x${maxCount}` : undefined
                 };
             });
-
-            const isChoiceStep = uniqueTokens.length > 1 || nonEmptyFlows.some((f) => f[0]?.includes('(') || f[0]?.includes('|'));
 
             if (hasFinishOption) {
                 dialogOptions.push({
