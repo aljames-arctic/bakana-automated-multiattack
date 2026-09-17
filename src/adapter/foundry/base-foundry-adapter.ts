@@ -259,7 +259,7 @@ export class BaseFoundryAdapter {
         const dialogCls = this.DialogV2;
         const title = config.title ?? localize('BAM.selectDialog.title', 'Select Multiattack Option');
         const subtitle = config.subtitle ?? '';
-        const cancelLabel = config.cancelLabel ?? localize('BAM.selectDialog.cancelLabel', 'Cancel Sequence');
+        const cancelLabel = config.cancelLabel ?? localize('BAM.selectDialog.cancelLabel', 'Skip Option');
 
         // Build HTML content for custom option buttons
         const optionsHtml = options.map((opt, idx) => {
