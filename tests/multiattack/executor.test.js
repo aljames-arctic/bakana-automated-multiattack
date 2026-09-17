@@ -4,6 +4,7 @@ import '../setup.js';
 import { adapter } from '../../src/adapter/index.js';
 import {
     executeMultiattack,
+    executeSectionOptionMap,
     registerMultiattackHooks,
     getSelectableTokensFromFlow,
     removeFirstOccurrence,
@@ -320,5 +321,62 @@ test('executeMultiattack handles per-item activity calls, (n) use limits, variab
     assert.equal(rolledActivities[3], 'Flail:Activity2', 'Step 4: Sub-activity 2 (1 use limit)');
     assert.equal(rolledActivities[4], 'Flail Main', 'Step 5: Flail attack');
     assert.equal(rolledActivities[5], 'Flail:Activity3', 'Step 6: Sub-activity 3 (1 use limit)');
+});
+
+test('cancelling or skipping an optional sub-activity selection step (__SKIP__) does not break the remaining multiattacks', async () => {
+    const rolled = [];
+
+    const act1 = { id: 'act-1', name: 'Activity1', use: async () => rolled.push('Flail:Activity1') };
+    const act2 = { id: 'act-2', name: 'Activity2', use: async () => rolled.push('Flail:Activity2') };
+    const primaryAttackAct = { id: 'act-main', type: 'attack', name: 'Flail Attack', use: async () => rolled.push('Flail Main') };
+
+    const flailItem = {
+        id: 'flail-id',
+        name: 'Flail',
+        system: {
+            activities: new Map([
+                ['act-main', primaryAttackAct],
+                ['act-1', act1],
+                ['act-2', act2]
+            ])
+        },
+        use: async (options) => {
+            if (options?.activity) {
+                return options.activity.use();
+            }
+            rolled.push('Flail Main');
+        }
+    };
+
+    const yeenoghuActor = {
+        id: 'yeenoghu-id-skip',
+        name: 'Yeenoghu',
+        items: new Map([['flail-id', flailItem]])
+    };
+
+    const sequence = [[
+        'Flail', '>(Flail:Activity1:1 | Flail:Activity2:1)', 'Flail', '>(Flail:Activity1:1 | Flail:Activity2:1)'
+    ]];
+
+    let promptIndex = 0;
+    const origSelectDialog = adapter.selectOptionDialog;
+    adapter.selectOptionDialog = async () => {
+        promptIndex++;
+        if (promptIndex === 1) {
+            return '__SKIP__';
+        }
+        return 'Flail:Activity2:1';
+    };
+
+    try {
+        await executeSectionOptionMap(yeenoghuActor, sequence);
+
+        assert.equal(rolled.length, 3, 'Should execute 2 Flail attacks and 1 sub-activity');
+        assert.equal(rolled[0], 'Flail Main', 'Step 1: First Flail attack');
+        assert.equal(rolled[1], 'Flail Main', 'Step 3: Second Flail attack (proceeds after Step 2 skipped)');
+        assert.equal(rolled[2], 'Flail:Activity2', 'Step 4: Sub-activity 2 selected');
+    } finally {
+        adapter.selectOptionDialog = origSelectDialog;
+    }
 });
 

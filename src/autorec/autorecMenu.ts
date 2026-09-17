@@ -1,7 +1,7 @@
 import { MODULE_ID } from '../constants.js';
 import { autorecManager } from './autorecManager.js';
 import { adapter } from '../adapter/index.js';
-import { abstractMultiattackDescription, hydrateMultiattackSequence } from '../multiattack/abstraction.js';
+import { abstractMultiattackDescription, hydrateMultiattackSequence, enrichSequenceWithDiscoveredSubActivities } from '../multiattack/abstraction.js';
 import { parseMultiattackTemplate } from '../multiattack/parser.js';
 import { stripOrderPrefix, getTokenUseLimit, stripPrefixesAndLimits, parseTokenComponents } from '../multiattack/executor.js';
 import { llmClient } from '../multiattack/llm-client.js';
@@ -44,6 +44,10 @@ export function formatTokenHumanLabel(rawToken: string): string {
         const idx = parseInt(itemMatch[1], 10);
         const act = itemMatch[2] ? `: ${itemMatch[2]}` : '';
         label = `Item #${idx + 1}${act}`;
+    } else if (lower.startsWith('any:')) {
+        label = `Any of [${clean.slice(4).split('|').join(', ')}]`;
+    } else if (comp.itemName && comp.activityName) {
+        label = `${comp.itemName} (${comp.activityName})`;
     } else if (lower === 'melee attack') {
         label = 'Any Melee Attack';
     } else if (lower === 'ranged attack') {
@@ -52,8 +56,6 @@ export function formatTokenHumanLabel(rawToken: string): string {
         label = 'Any Spell Attack';
     } else if (lower === 'any attack') {
         label = 'Any Attack';
-    } else if (lower.startsWith('any:')) {
-        label = `Any of [${clean.slice(4).split('|').join(', ')}]`;
     } else if (clean.startsWith('(') && clean.endsWith(')')) {
         const choices = clean
             .slice(1, -1)
@@ -244,7 +246,7 @@ export class AutorecMenuApplication extends BaseApp {
 
         const templateSequence: MultiattackSequence = parsedTemplateSeq ?? [[['<ITEM_0>']]];
 
-        const concreteSequence: MultiattackSequence = templateSequence.map((section) =>
+        const rawConcreteSequence: MultiattackSequence = templateSequence.map((section) =>
             section.map((flow) =>
                 flow.map((token) => {
                     const strict = token.trim().startsWith('>');
@@ -254,6 +256,8 @@ export class AutorecMenuApplication extends BaseApp {
                 })
             )
         );
+
+        const concreteSequence = enrichSequenceWithDiscoveredSubActivities(rawConcreteSequence, actor);
 
         const existingSelected = autorecManager.getAllEntries().find((e) => e.id === this._selectedId);
 
@@ -465,7 +469,7 @@ export class AutorecMenuApplication extends BaseApp {
                     ).join('') + `<option value="__CUSTOM__" ${!isStandard ? 'selected' : ''}>Custom Weapon / Pool...</option>`;
 
                     const customInputHtml = !isStandard
-                        ? `<input type="text" class="bam-pill-custom-input" data-sec="${sectionIdx}" data-flow="${flowIdx}" data-grp="${groupIdx}" value="${group.token}" placeholder="Weapon or any:A|B" style="width: 120px; padding: 1px 5px; background: #11141d; border: 1px solid #6366f1; color: #fff; border-radius: 3px; font-size: 0.78rem;" />`
+                        ? `<input type="text" class="bam-pill-custom-input" data-sec="${sectionIdx}" data-flow="${flowIdx}" data-grp="${groupIdx}" value="${group.token}" placeholder="Item:Activity:Uses (e.g. Flail:Activity1:1)" style="width: 170px; padding: 1px 5px; background: #11141d; border: 1px solid #6366f1; color: #fff; border-radius: 3px; font-size: 0.78rem;" />`
                         : '';
 
                     const connectorHtml = groupIdx > 0

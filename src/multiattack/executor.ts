@@ -447,6 +447,16 @@ export async function executeSectionOptionMap(
                 };
             });
 
+            const isChoiceStep = uniqueTokens.length > 1 || nonEmptyFlows.some((f) => f[0]?.includes('(') || f[0]?.includes('|'));
+
+            if (isChoiceStep && !hasFinishOption) {
+                dialogOptions.push({
+                    value: '__SKIP__',
+                    label: localize('BAM.selectDialog.skipStepLabel', 'Skip Option (No Bonus Effect)'),
+                    isFinish: false
+                });
+            }
+
             if (hasFinishOption) {
                 dialogOptions.push({
                     value: '__FINISH__',
@@ -461,9 +471,17 @@ export async function executeSectionOptionMap(
             });
         }
 
-        if (!selectedToken || selectedToken === '__FINISH__') {
-            log.debug(`executeSectionOptionMap | Sequence finished or cancelled at step ${stepCount}`);
+        if (selectedToken === '__FINISH__') {
+            log.debug(`executeSectionOptionMap | Multiattack finished early at step ${stepCount}`);
             break;
+        }
+
+        if (!selectedToken || selectedToken === '__SKIP__') {
+            log.debug(`executeSectionOptionMap | Skipping optional selection step ${stepCount}`);
+            // Advance each flow past the current step without executing an attack
+            optionMap = nonEmptyFlows.map((flow) => flow.slice(1));
+            stepCount++;
+            continue;
         }
 
         // Resolve and natively use the chosen attack target/activity
