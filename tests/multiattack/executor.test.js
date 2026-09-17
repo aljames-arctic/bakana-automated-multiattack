@@ -416,3 +416,76 @@ test('getItemSecondaryActivities filters sub-activities against feature and item
     assert.ok(!names.includes('Terror'), 'Should exclude unmentioned Terror activity');
 });
 
+test('skipping the final remaining sub-activity option (Paralysis) presents a popup and skips without auto-selecting', async () => {
+    const rolled = [];
+
+    const confAct = { id: 'act-conf', name: 'Confusion', use: async () => rolled.push('Flail:Confusion') };
+    const forceAct = { id: 'act-force', name: 'Force', use: async () => rolled.push('Flail:Force') };
+    const paraAct = { id: 'act-para', name: 'Paralysis', use: async () => rolled.push('Flail:Paralysis') };
+    const mainAct = { id: 'act-main', type: 'attack', name: 'Flail Attack', use: async () => rolled.push('Flail Main') };
+
+    const flailItem = {
+        id: 'flail-id-3',
+        name: 'Flail',
+        system: {
+            activities: new Map([
+                ['act-main', mainAct],
+                ['act-conf', confAct],
+                ['act-force', forceAct],
+                ['act-para', paraAct]
+            ]),
+            description: { value: 'Yeenoghu can cause the target to suffer confusion, force, or paralysis.' }
+        },
+        use: async (options) => {
+            if (options?.activity) return options.activity.use();
+            rolled.push('Flail Main');
+        }
+    };
+
+    const yeenoghuActor = {
+        id: 'yeenoghu-actor-skippara',
+        name: 'Yeenoghu',
+        items: new Map([['flail-id-3', flailItem]])
+    };
+
+    const multiattackItem = {
+        id: 'ma-yeenoghu-3',
+        name: 'Multiattack',
+        system: { description: { value: 'Yeenoghu makes three Flail attacks.' } }
+    };
+
+    let dialogCallCount = 0;
+    const choicesPresented = [];
+    const origSelectDialog = adapter.selectOptionDialog;
+    adapter.selectOptionDialog = async (options) => {
+        dialogCallCount++;
+        choicesPresented.push(options.map((o) => o.value));
+
+        // Step 1: Flail attack
+        if (dialogCallCount === 1) return options[0]?.value ?? null;
+        // Step 2: Choice prompt (Confusion | Force | Paralysis) -> choose Confusion
+        if (dialogCallCount === 2) return 'Flail:Confusion:1';
+        // Step 3: Flail attack
+        if (dialogCallCount === 3) return options[0]?.value ?? null;
+        // Step 4: Choice prompt (Force | Paralysis) -> choose Force
+        if (dialogCallCount === 4) return 'Flail:Force:1';
+        // Step 5: Flail attack
+        if (dialogCallCount === 5) return options[0]?.value ?? null;
+        // Step 6: Choice prompt (Paralysis only!) -> return null to SKIP Paralysis!
+        if (dialogCallCount === 6) return null;
+
+        return options[0]?.value ?? null;
+    };
+
+    try {
+        await executeMultiattack(yeenoghuActor, multiattackItem);
+
+        assert.equal(dialogCallCount, 6, 'Should call selectOptionDialog for all 6 steps (including single option Paralysis)');
+        assert.deepEqual(choicesPresented[5], ['Flail:Paralysis:1'], 'Step 6 choice options should present Paralysis as option');
+        assert.equal(rolled.length, 5, 'Should execute 3 Flail attacks, Confusion, and Force, but NOT Paralysis');
+        assert.deepEqual(rolled, ['Flail Main', 'Flail:Confusion', 'Flail Main', 'Flail:Force', 'Flail Main']);
+    } finally {
+        adapter.selectOptionDialog = origSelectDialog;
+    }
+});
+

@@ -252,9 +252,6 @@ export class BaseFoundryAdapter {
      */
     async selectOptionDialog(options: SelectOptionItem[], config: SelectDialogConfig = {}): Promise<string | null> {
         if (!options || options.length === 0) return null;
-        if (options.length === 1 && !options[0]?.isFinish) {
-            return options[0]?.value ?? null;
-        }
 
         const dialogCls = this.DialogV2;
         const title = config.title ?? localize('BAM.selectDialog.title', 'Select Multiattack Option');
