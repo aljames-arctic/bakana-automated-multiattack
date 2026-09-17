@@ -1,6 +1,5 @@
 import { initializeFoundryAdapter, BaseFoundryAdapter } from './foundry/index.js';
 import type { SelectDialogConfig } from './foundry/base-foundry-adapter.js';
-import { FoundryV13Adapter } from './foundry/foundry-v13-adapter.js';
 import { initializeSystemAdapter, BaseSystemAdapter } from './system/index.js';
 import type { MultiattackContext } from './system/base-system-adapter.js';
 import { log } from '../lib/logger.js';
@@ -15,9 +14,7 @@ class Adapter {
     system: BaseSystemAdapter;
 
     constructor() {
-        this.foundry = game?.release?.generation
-            ? initializeFoundryAdapter()
-            : new FoundryV13Adapter();
+        this.foundry = initializeFoundryAdapter();
         this.system = initializeSystemAdapter(game?.system?.id ?? 'dnd5e', this.foundry);
     }
 
