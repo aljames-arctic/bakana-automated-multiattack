@@ -380,3 +380,36 @@ test('cancelling or skipping an optional sub-activity selection step (__SKIP__) 
     }
 });
 
+test('getItemSecondaryActivities filters sub-activities against feature and item description text', () => {
+    const mainAct = { id: 'main', type: 'attack', name: 'Flail' };
+    const confAct = { id: 'conf', name: 'Confusion' };
+    const forceAct = { id: 'force', name: 'Force' };
+    const paraAct = { id: 'para', name: 'Paralysis' };
+    const painAct = { id: 'pain', name: 'Pain' };
+    const terrorAct = { id: 'terror', name: 'Terror' };
+
+    const flailWithCustomActs = {
+        id: 'flail-custom',
+        name: 'Flail',
+        system: {
+            activities: new Map([
+                ['main', mainAct],
+                ['conf', confAct],
+                ['force', forceAct],
+                ['para', paraAct],
+                ['pain', painAct],
+                ['terror', terrorAct]
+            ]),
+            description: {
+                value: 'Yeenoghu can cause the target to suffer one of the following additional effects: confusion, force, or paralysis.'
+            }
+        }
+    };
+
+    const secondaries = getItemSecondaryActivities(flailWithCustomActs);
+    const names = secondaries.map((s) => s.name);
+    assert.deepEqual(names, ['Confusion', 'Force', 'Paralysis'], 'Should only include Confusion, Force, and Paralysis mentioned in text');
+    assert.ok(!names.includes('Pain'), 'Should exclude unmentioned Pain activity');
+    assert.ok(!names.includes('Terror'), 'Should exclude unmentioned Terror activity');
+});
+

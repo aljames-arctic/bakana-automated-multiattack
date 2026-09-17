@@ -540,7 +540,7 @@ export async function executeMultiattack(
     }
 
     // Automatically enrich sequence with sub-activities discovered on non-multiattack items (e.g. Yeenoghu's Flail)
-    const enrichedSequence = enrichSequenceWithDiscoveredSubActivities(resolved.sequence, actor);
+    const enrichedSequence = enrichSequenceWithDiscoveredSubActivities(resolved.sequence, actor, cleanDesc);
     const tokenUseCounts = new Map<string, number>();
 
     for (const sectionOptionMap of enrichedSequence) {

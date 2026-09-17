@@ -257,7 +257,7 @@ export class AutorecMenuApplication extends BaseApp {
             )
         );
 
-        const concreteSequence = enrichSequenceWithDiscoveredSubActivities(rawConcreteSequence, actor);
+        const concreteSequence = enrichSequenceWithDiscoveredSubActivities(rawConcreteSequence, actor, rawDescription);
 
         const existingSelected = autorecManager.getAllEntries().find((e) => e.id === this._selectedId);
 

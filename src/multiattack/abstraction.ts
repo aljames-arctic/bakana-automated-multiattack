@@ -341,7 +341,12 @@ export interface ItemActivityRef {
 /**
  * Discovers secondary/optional sub-activities on an Item document (such as Yeenoghu's Flail per-turn activities).
  */
-export function getItemSecondaryActivities(item: Item): ItemActivityRef[] {
+/**
+ * Discovers secondary/optional sub-activities on an Item document (such as Yeenoghu's Flail per-turn activities).
+ * If `filterText` (item or feature description) is provided and contains matches for specific activity names,
+ * filters the returned activities to only those referenced in the description text.
+ */
+export function getItemSecondaryActivities(item: Item, filterText?: string): ItemActivityRef[] {
     if (!item) return [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sys = (item as any).system;
@@ -357,7 +362,7 @@ export function getItemSecondaryActivities(item: Item): ItemActivityRef[] {
     // Primary activity is usually an 'attack' activity or the first activity
     const primary = actList.find((a: any) => a?.type === 'attack') ?? actList[0];
 
-    const secondaries: ItemActivityRef[] = [];
+    const allSecondaries: ItemActivityRef[] = [];
     for (const act of actList) {
         if (!act) continue;
         const isPrimaryId = Boolean(primary?.id && act.id === primary.id);
@@ -365,7 +370,7 @@ export function getItemSecondaryActivities(item: Item): ItemActivityRef[] {
         if (isPrimaryId || isPrimarySubId) continue;
         const name = String(act.name ?? act.label ?? '').trim();
         if (name) {
-            secondaries.push({
+            allSecondaries.push({
                 id: String(act.id ?? act._id ?? name),
                 name,
                 type: act.type
@@ -373,7 +378,21 @@ export function getItemSecondaryActivities(item: Item): ItemActivityRef[] {
         }
     }
 
-    return secondaries;
+    if (allSecondaries.length === 0) return [];
+
+    // Filter against description text if available
+    const textToSearch = [filterText, sys.description?.value].filter(Boolean).join(' ').toLowerCase();
+    if (textToSearch.trim()) {
+        const textMatched = allSecondaries.filter((sec) => {
+            const secName = sec.name.toLowerCase();
+            return secName.length > 1 && textToSearch.includes(secName);
+        });
+        if (textMatched.length > 0) {
+            return textMatched;
+        }
+    }
+
+    return allSecondaries;
 }
 
 /**
@@ -382,7 +401,8 @@ export function getItemSecondaryActivities(item: Item): ItemActivityRef[] {
  */
 export function enrichSequenceWithDiscoveredSubActivities(
     sequence: MultiattackSequence,
-    actor: Actor
+    actor: Actor,
+    filterText?: string
 ): MultiattackSequence {
     if (!Array.isArray(sequence) || !actor) return sequence;
 
@@ -402,7 +422,7 @@ export function enrichSequenceWithDiscoveredSubActivities(
                 const item = resolveActorItem(actor, cleanToken);
                 if (!item) continue;
 
-                const secondaries = getItemSecondaryActivities(item);
+                const secondaries = getItemSecondaryActivities(item, filterText);
                 if (secondaries.length > 0) {
                     const choices = secondaries
                         .map((sec) => `${item.name.trim()}:${sec.name}:1`)
