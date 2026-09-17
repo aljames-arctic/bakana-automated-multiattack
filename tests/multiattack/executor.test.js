@@ -489,3 +489,66 @@ test('skipping the final remaining sub-activity option (Paralysis) presents a po
     }
 });
 
+test('even when autoSelectSingleOption setting is true, choice/sub-activity steps never auto-select', async () => {
+    globalThis.game.settings.set('bakana-automated-multiattack', 'autoSelectSingleOption', true);
+    try {
+        const rolled = [];
+        const confAct = { id: 'act-conf', name: 'Confusion', use: async () => rolled.push('Flail:Confusion') };
+        const forceAct = { id: 'act-force', name: 'Force', use: async () => rolled.push('Flail:Force') };
+        const paraAct = { id: 'act-para', name: 'Paralysis', use: async () => rolled.push('Flail:Paralysis') };
+        const mainAct = { id: 'act-main', type: 'attack', name: 'Flail Attack', use: async () => rolled.push('Flail Main') };
+
+        const flailItem = {
+            id: 'flail-id-4',
+            name: 'Flail',
+            system: {
+                activities: new Map([
+                    ['act-main', mainAct],
+                    ['act-conf', confAct],
+                    ['act-force', forceAct],
+                    ['act-para', paraAct]
+                ]),
+                description: { value: 'Yeenoghu can cause the target to suffer confusion, force, or paralysis.' }
+            },
+            use: async (options) => {
+                if (options?.activity) return options.activity.use();
+                rolled.push('Flail Main');
+            }
+        };
+
+        const yeenoghuActor = {
+            id: 'yeenoghu-actor-skippara-2',
+            name: 'Yeenoghu',
+            items: new Map([['flail-id-4', flailItem]])
+        };
+
+        const multiattackItem = {
+            id: 'ma-yeenoghu-4',
+            name: 'Multiattack',
+            system: { description: { value: 'Yeenoghu makes three Flail attacks.' } }
+        };
+
+        let dialogPromptForParalysisCalled = false;
+        const origSelectDialog = adapter.selectOptionDialog;
+        adapter.selectOptionDialog = async (options) => {
+            if (options.length === 1 && options[0]?.value.includes('Paralysis')) {
+                dialogPromptForParalysisCalled = true;
+                return null; // User chooses to skip Paralysis
+            }
+            if (options.some((o) => o.value.includes('Confusion'))) return 'Flail:Confusion:1';
+            if (options.some((o) => o.value.includes('Force'))) return 'Flail:Force:1';
+            return options[0]?.value ?? null;
+        };
+
+        try {
+            await executeMultiattack(yeenoghuActor, multiattackItem);
+            assert.ok(dialogPromptForParalysisCalled, 'Dialog MUST be called for single-option choice Paralysis even when autoSelectSingleOption is true');
+            assert.deepEqual(rolled, ['Flail Main', 'Flail:Confusion', 'Flail Main', 'Flail:Force', 'Flail Main'], 'Paralysis should be skipped when user cancels dialog');
+        } finally {
+            adapter.selectOptionDialog = origSelectDialog;
+        }
+    } finally {
+        globalThis.game.settings.set('bakana-automated-multiattack', 'autoSelectSingleOption', false);
+    }
+});
+
