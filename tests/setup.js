@@ -77,6 +77,9 @@ globalThis.foundry = {
                     if (globalThis.__mockDialogSelectHandler) {
                         return globalThis.__mockDialogSelectHandler(config);
                     }
+                    if (config?.close) {
+                        config.close();
+                    }
                     return null;
                 }
             },

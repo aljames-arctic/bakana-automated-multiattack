@@ -327,8 +327,8 @@ export class BaseFoundryAdapter {
                             });
                         }
                     },
-                    close: () => finish(null)
-                }).catch(() => finish(null));
+                    close: () => finish(options[0]?.value ?? null)
+                }).catch(() => finish(options[0]?.value ?? null));
             });
         }
 

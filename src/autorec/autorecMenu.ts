@@ -3,7 +3,7 @@ import { autorecManager } from './autorecManager.js';
 import { adapter } from '../adapter/index.js';
 import { abstractMultiattackDescription, hydrateMultiattackSequence } from '../multiattack/abstraction.js';
 import { parseMultiattackTemplate } from '../multiattack/parser.js';
-import { stripOrderPrefix } from '../multiattack/executor.js';
+import { stripOrderPrefix, getTokenUseLimit, stripPrefixesAndLimits, parseTokenComponents } from '../multiattack/executor.js';
 import { llmClient } from '../multiattack/llm-client.js';
 import { localize } from '../lib/utils.js';
 import { notify } from '../lib/logger.js';
@@ -33,22 +33,41 @@ const STANDARD_TOKEN_CHOICES: Array<{ value: string; label: string }> = [
  * Formats an attack token string into a human-friendly label for UI display.
  */
 export function formatTokenHumanLabel(rawToken: string): string {
-    const clean = stripOrderPrefix(rawToken);
+    const comp = parseTokenComponents(rawToken);
+    const clean = comp.cleanToken;
     const lower = clean.toLowerCase();
 
-    const itemMatch = /^<item_(\d+)>$/i.exec(clean);
+    let label = clean;
+
+    const itemMatch = /^<item_(\d+)>(?::(.+))?$/i.exec(clean);
     if (itemMatch && itemMatch[1]) {
         const idx = parseInt(itemMatch[1], 10);
-        return `Item #${idx + 1}`;
+        const act = itemMatch[2] ? `: ${itemMatch[2]}` : '';
+        label = `Item #${idx + 1}${act}`;
+    } else if (lower === 'melee attack') {
+        label = 'Any Melee Attack';
+    } else if (lower === 'ranged attack') {
+        label = 'Any Ranged Attack';
+    } else if (lower === 'spell attack') {
+        label = 'Any Spell Attack';
+    } else if (lower === 'any attack') {
+        label = 'Any Attack';
+    } else if (lower.startsWith('any:')) {
+        label = `Any of [${clean.slice(4).split('|').join(', ')}]`;
+    } else if (clean.startsWith('(') && clean.endsWith(')')) {
+        const choices = clean
+            .slice(1, -1)
+            .split('|')
+            .map((c) => formatTokenHumanLabel(c.trim()))
+            .join(' OR ');
+        label = `Choice (${choices})`;
     }
-    if (lower === 'melee attack') return 'Any Melee Attack';
-    if (lower === 'ranged attack') return 'Any Ranged Attack';
-    if (lower === 'spell attack') return 'Any Spell Attack';
-    if (lower === 'any attack') return 'Any Attack';
-    if (lower.startsWith('any:')) {
-        return `Any of [${clean.slice(4).split('|').join(', ')}]`;
+
+    if (comp.uses !== undefined) {
+        label += ` (${comp.uses} ${comp.uses === 1 ? 'use' : 'uses'})`;
     }
-    return clean;
+
+    return label;
 }
 
 /**
