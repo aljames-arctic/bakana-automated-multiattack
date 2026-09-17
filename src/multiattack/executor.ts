@@ -449,14 +449,6 @@ export async function executeSectionOptionMap(
 
             const isChoiceStep = uniqueTokens.length > 1 || nonEmptyFlows.some((f) => f[0]?.includes('(') || f[0]?.includes('|'));
 
-            if (isChoiceStep && !hasFinishOption) {
-                dialogOptions.push({
-                    value: '__SKIP__',
-                    label: localize('BAM.selectDialog.skipStepLabel', 'Skip Option (No Bonus Effect)'),
-                    isFinish: false
-                });
-            }
-
             if (hasFinishOption) {
                 dialogOptions.push({
                     value: '__FINISH__',
@@ -467,7 +459,10 @@ export async function executeSectionOptionMap(
 
             selectedToken = await adapter.selectOptionDialog(dialogOptions, {
                 title: `${actor.name} — ${localize('BAM.selectDialog.title', 'Select Multiattack Option')}`,
-                subtitle: `Attack Step ${stepCount}`
+                subtitle: `Attack Step ${stepCount}`,
+                cancelLabel: isChoiceStep
+                    ? localize('BAM.selectDialog.skipStepLabel', 'Skip Option')
+                    : localize('BAM.selectDialog.cancelLabel', 'Skip Option')
             });
         }
 
