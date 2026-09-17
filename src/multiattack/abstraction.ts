@@ -1,4 +1,5 @@
 import { getLocalizedGrammar, escapeRegExp, isLocalizedMultiattackName, type LocalizedGrammar } from './grammar.js';
+import { adapter } from '../adapter/index.js';
 import type { AbstractedMultiattack, MultiattackSequence } from '../types/global.d.js';
 
 /**
@@ -280,10 +281,13 @@ export function hydrateMultiattackSequence(
         (Array.isArray(section) ? section : []).map((optionFlow) =>
             (Array.isArray(optionFlow) ? optionFlow : []).map((token) => {
                 const trimmed = String(token ?? '').trim();
-                const strict = trimmed.startsWith('>');
-                const cleanKey = strict ? trimmed.slice(1).trim().toUpperCase() : trimmed.toUpperCase();
-                const mapped = itemMap[cleanKey] ?? itemMap[trimmed] ?? (strict ? trimmed.slice(1).trim() : trimmed);
-                return strict ? `>${mapped}` : mapped;
+                if (!trimmed) return trimmed;
+                // Hydrate all occurrences of <ITEM_N> placeholders inside the token string
+                const hydrated = trimmed.replace(/<ITEM_(\d+)>/gi, (match) => {
+                    const key = match.toUpperCase();
+                    return itemMap[key] ?? itemMap[match] ?? match;
+                });
+                return hydrated;
             })
         )
     );
@@ -299,7 +303,7 @@ export function hydrateMultiattackSequence(
 export function resolveActorItem(actor: Actor, selection: string): Item | null {
     if (!actor?.items || !selection) return null;
     const clean = selection.trim().toLowerCase();
-    const items = Array.from(actor.items.values()) as Item[];
+    const items = adapter.getActorItems(actor);
     const grammar = getLocalizedGrammar();
 
     const suffixAlternation = grammar.attackSuffixes
@@ -325,4 +329,88 @@ export function resolveActorItem(actor: Actor, selection: string): Item | null {
     }
 
     return null;
+}
+
+export interface ItemActivityRef {
+    id: string;
+    name: string;
+    type?: string;
+    isPrimary?: boolean;
+}
+
+/**
+ * Discovers secondary/optional sub-activities on an Item document (such as Yeenoghu's Flail per-turn activities).
+ */
+export function getItemSecondaryActivities(item: Item): ItemActivityRef[] {
+    if (!item) return [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sys = (item as any).system;
+    if (!sys || !sys.activities) return [];
+
+    const activities = sys.activities;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const actList: any[] = activities.contents
+        ?? (typeof activities.values === 'function' ? Array.from(activities.values()) : (Array.isArray(activities) ? activities : Object.values(activities)));
+
+    if (!actList || actList.length <= 1) return [];
+
+    // Primary activity is usually an 'attack' activity or the first activity
+    const primary = actList.find((a: any) => a?.type === 'attack') ?? actList[0];
+
+    const secondaries: ItemActivityRef[] = [];
+    for (const act of actList) {
+        if (!act) continue;
+        const isPrimaryId = Boolean(primary?.id && act.id === primary.id);
+        const isPrimarySubId = Boolean(primary?._id && act._id === primary._id);
+        if (isPrimaryId || isPrimarySubId) continue;
+        const name = String(act.name ?? act.label ?? '').trim();
+        if (name) {
+            secondaries.push({
+                id: String(act.id ?? act._id ?? name),
+                name,
+                type: act.type
+            });
+        }
+    }
+
+    return secondaries;
+}
+
+/**
+ * Automatically discovers secondary sub-activities on items referenced in a multiattack sequence
+ * (e.g. Yeenoghu's Flail per-turn effects) and interleaves choice steps into the sequence if not already present.
+ */
+export function enrichSequenceWithDiscoveredSubActivities(
+    sequence: MultiattackSequence,
+    actor: Actor
+): MultiattackSequence {
+    if (!Array.isArray(sequence) || !actor) return sequence;
+
+    return sequence.map((section) =>
+        (Array.isArray(section) ? section : []).map((optionFlow) => {
+            const enrichedFlow: string[] = [];
+            for (let i = 0; i < optionFlow.length; i++) {
+                const token = optionFlow[i] ?? '';
+                enrichedFlow.push(token);
+
+                // Don't duplicate if next token is already a choice group or activity reference
+                const nextToken = optionFlow[i + 1] ?? '';
+                if (nextToken.includes(':') || nextToken.includes('(')) continue;
+
+                // Resolve actor item from current token
+                const cleanToken = token.replace(/^[>-]+\s*/, '').trim();
+                const item = resolveActorItem(actor, cleanToken);
+                if (!item) continue;
+
+                const secondaries = getItemSecondaryActivities(item);
+                if (secondaries.length > 0) {
+                    const choices = secondaries
+                        .map((sec) => `${item.name.trim()}:${sec.name}:1`)
+                        .join(' | ');
+                    enrichedFlow.push(`>(${choices})`);
+                }
+            }
+            return enrichedFlow;
+        })
+    );
 }

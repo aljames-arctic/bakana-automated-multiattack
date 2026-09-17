@@ -122,6 +122,18 @@ export class BaseSystemAdapter {
         log.debug(`BaseSystemAdapter.useItem | Rolling item "${item.name}" natively`);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const anyItem = item as any;
+
+        // Support specific activity usage in D&D 5e v4+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const activity = options.activity as any;
+        if (activity && typeof activity.use === 'function') {
+            return activity.use({}, options);
+        }
+        const activityId = (options.activityId as string) ?? activity?.id;
+        if (activityId && anyItem.use) {
+            return anyItem.use({ activityId }, options);
+        }
+
         if (anyItem.use) {
             return anyItem.use({}, options);
         }

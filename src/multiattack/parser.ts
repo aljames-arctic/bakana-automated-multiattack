@@ -78,15 +78,97 @@ function parseAtomicClauseItems(clause: string, grammar: LocalizedGrammar): stri
     return [];
 }
 
+export interface VariableDefinitions {
+    variables: Record<string, string>;
+    cleanTemplate: string;
+}
+
+/**
+ * Extracts variable definitions (e.g., `Activities: (-Flail:Activity1 | -Flail:Activity2)`)
+ * from a multiattack pattern template.
+ */
+export function extractVariableDefinitions(template: string): VariableDefinitions {
+    const variables: Record<string, string> = {};
+    if (!template) return { variables, cleanTemplate: '' };
+
+    const lines = template.split(/[\r\n]+/);
+    const remainingLines: string[] = [];
+
+    const varRegex = /^\s*([A-Za-z0-9_<>]+)\s*:\s*(?:\(([^)]+)\)|(.+))\s*$/;
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        const match = varRegex.exec(trimmed);
+        if (match && match[1] && (match[2] || match[3])) {
+            const varName = match[1].trim();
+            const rawChoices = (match[2] ?? match[3] ?? '').trim();
+            if (rawChoices.includes('|') || rawChoices.includes(':') || /\(\d+\)/.test(rawChoices)) {
+                variables[varName] = rawChoices.startsWith('(') && rawChoices.endsWith(')') ? rawChoices : `(${rawChoices})`;
+                continue;
+            }
+        }
+        remainingLines.push(line);
+    }
+
+    return {
+        variables,
+        cleanTemplate: remainingLines.join('\n').trim()
+    };
+}
+
+/**
+ * Expands variable definitions inside a multiattack sequence.
+ */
+export function expandVariablesInSequence(
+    sequence: MultiattackSequence,
+    variables: Record<string, string>
+): MultiattackSequence {
+    if (!Array.isArray(sequence) || Object.keys(variables).length === 0) return sequence;
+
+    return sequence.map((section) =>
+        (Array.isArray(section) ? section : []).map((optionFlow) =>
+            (Array.isArray(optionFlow) ? optionFlow : []).map((token) => {
+                const trimmed = String(token ?? '').trim();
+                const isStrict = trimmed.startsWith('>');
+                const cleanKey = isStrict ? trimmed.slice(1).trim() : trimmed;
+
+                if (variables[cleanKey]) {
+                    const expanded = variables[cleanKey]!;
+                    return isStrict ? `>${expanded}` : expanded;
+                }
+                return token;
+            })
+        )
+    );
+}
+
 /**
  * Extracts quantified `<ITEM_N>` or generic melee/ranged attack tokens from a single clause
  * using localized number words and keywords from `grammar`.
- * If the clause contains an intra-clause "then" transition (e.g. "three attacks with <ITEM_0> then one with <ITEM_1>"),
- * items after "then" are automatically prefixed with `>` to enforce strict ordering within that flow.
+ * If the clause contains an intra-clause "then" transition or explicit `>` step operator,
+ * tokens are split and prefixed appropriately.
  */
 function parseSingleClauseItems(clause: string, grammar: LocalizedGrammar): string[] {
     const clean = clause.trim();
     if (!clean) return [];
+
+    // 1. If clause contains explicit '>' step operators (surrounded by spaces), parse as explicit step flow
+    if (/\s+>\s+/.test(clean)) {
+        const parts = clean.split(/\s+>\s+/).map((s) => s.trim()).filter(Boolean);
+        if (parts.length > 0) {
+            const explicitFlow: string[] = [];
+            parts.forEach((part, idx) => {
+                const parsedPart = parseAtomicClauseItems(part, grammar);
+                const itemsToUse = parsedPart.length > 0 ? parsedPart : [part];
+                for (const item of itemsToUse) {
+                    explicitFlow.push(idx > 0 && !item.startsWith('>') ? `>${item}` : item);
+                }
+            });
+            if (explicitFlow.length > 0) return explicitFlow;
+        }
+    }
 
     const thenPattern = grammar.thenDelimiters.map((w) => escapeRegExp(w)).join('|');
     if (thenPattern) {
@@ -136,7 +218,7 @@ function parseQuantifiedItemList(phrase: string, grammar: LocalizedGrammar): str
         ? '<ITEM_\\d+>'
         : [...meleeSorted, ...rangedSorted, ...spellSorted, ...anyAttackSorted].join('|');
 
-    // Matches: (NumberWord) + up to 8 intervening words (prepositions/possessives/flavor text like "melee attacks with its", "attaques au corps à corps avec son") + (Target)
+    // Matches: (NumberWord) + up to 8 intervening words + (Target)
     const tokenRegex = new RegExp(
         `\\b(${numPattern})\\b(?:\\s+(?!<ITEM_\\d+>|${numPattern}\\b)[\\p{L}-]+){0,8}?\\s*(${targetAlternatives})`,
         'giu'
@@ -164,8 +246,13 @@ function parseQuantifiedItemList(phrase: string, grammar: LocalizedGrammar): str
         results.push(...repeatToken(normalizedTarget, qty));
     }
 
-    // Fallback: if no quantified pairs matched, look for standalone <ITEM_N> tokens only if a recognized action verb is present
+    // Fallback: if no quantified pairs matched, look for standalone items, choice groups, or activity tokens
     if (results.length === 0) {
+        const cleanPhrase = phrase.trim();
+        if (cleanPhrase.startsWith('(') || (cleanPhrase.includes(':') && !cleanPhrase.includes(' ')) || (cleanPhrase.includes('|') && !cleanPhrase.includes(' '))) {
+            return [cleanPhrase];
+        }
+
         const hasActionVerb = grammar.actionVerbs.some((v) =>
             new RegExp(`\\b${escapeRegExp(v).replace(/\s+/g, '\\s+')}\\b`, 'iu').test(phrase)
         );
@@ -233,7 +320,7 @@ export function parseMultiattackSection(
     let bonusItem: string | null = null;
     let mainText = clean;
 
-    // 1. Check for localized conditional bonus attack sentence (e.g., "If <ACTOR> has ... can also make a <ITEM_Z> attack")
+    // 1. Check for localized conditional bonus attack sentence
     const ifAlternation = grammar.conditionIfKeywords.map((w) => escapeRegExp(w)).join('|');
     const alsoAlternation = grammar.bonusAlsoKeywords.map((w) => escapeRegExp(w).replace(/\s+/g, '\\s+')).join('|');
     if (ifAlternation && alsoAlternation) {
@@ -248,7 +335,7 @@ export function parseMultiattackSection(
         }
     }
 
-    // 2. Check for localized replacement sentence (e.g., "can replace one attack with <ITEM_Y>")
+    // 2. Check for localized replacement sentence
     let replacementItem: string | null = null;
     let replaceTarget: string | undefined = undefined;
 
@@ -290,7 +377,7 @@ export function parseMultiattackSection(
         sequences = applyReplacementClause(sequences, replacementItem, replaceTarget);
     }
 
-    // Apply conditional bonus attack if present (creates both the extended sequence and base sequence)
+    // Apply conditional bonus attack if present
     if (bonusItem) {
         const withBonus = sequences.map((seq) => [...seq, bonusItem!]);
         sequences = [...withBonus, ...sequences];
@@ -320,6 +407,8 @@ export function parseMultiattackSection(
 export function parseMultiattackTemplate(template: string): MultiattackSequence | null {
     if (!template || !template.trim()) return null;
 
+    const { variables, cleanTemplate } = extractVariableDefinitions(template);
+
     const grammar = getLocalizedGrammar();
 
     const thenPattern = grammar.thenDelimiters.map((w) => escapeRegExp(w)).join('|');
@@ -328,20 +417,22 @@ export function parseMultiattackTemplate(template: string): MultiattackSequence 
         'iu'
     );
 
-    // If the template contains an 'or' branch without a sentence-boundary 'then' break,
-    // treat as a single section so intra-branch 'then' transitions are handled inside each OR branch.
-    const shouldSplitTopLevelThen = sentenceBoundaryThenRegex.test(template) || !grammar.orDelimiterRegex.test(template);
+    const shouldSplitTopLevelThen = sentenceBoundaryThenRegex.test(cleanTemplate) || !grammar.orDelimiterRegex.test(cleanTemplate);
 
     const rawSections = shouldSplitTopLevelThen
-        ? template.split(grammar.thenDelimiterRegex).map((s) => s.trim()).filter(Boolean)
-        : [template.trim()];
+        ? cleanTemplate.split(grammar.thenDelimiterRegex).map((s) => s.trim()).filter(Boolean)
+        : [cleanTemplate.trim()];
 
-    const result: MultiattackSequence = [];
+    let result: MultiattackSequence = [];
     for (const rawSection of rawSections) {
         const parsedSection = parseMultiattackSection(rawSection, grammar);
         if (parsedSection.length > 0) {
             result.push(parsedSection);
         }
+    }
+
+    if (result.length > 0 && Object.keys(variables).length > 0) {
+        result = expandVariablesInSequence(result, variables);
     }
 
     return result.length > 0 ? result : null;

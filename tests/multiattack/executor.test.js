@@ -8,8 +8,12 @@ import {
     getSelectableTokensFromFlow,
     removeFirstOccurrence,
     getMatchingCategoryItems,
-    actorHasAttackOption
+    actorHasAttackOption,
+    getTokenUseLimit,
+    stripPrefixesAndLimits,
+    parseTokenComponents
 } from '../../src/multiattack/executor.js';
+import { getItemSecondaryActivities } from '../../src/multiattack/abstraction.js';
 import { autorecManager } from '../../src/autorec/autorecManager.js';
 
 test('adapter.isMultiattackMessage detects Multiattack chat cards and ignores attack/damage rolls', () => {
@@ -197,6 +201,26 @@ test('getSelectableTokensFromFlow enforces strict-order (>) prefixes while prese
         ['Gore'],
         'Gore should become selectable after Charge is consumed'
     );
+
+    // Item:Activity:Uses limit notation parsing via parseTokenComponents
+    const parsed = parseTokenComponents('Flail:Activity1:1');
+    assert.equal(parsed.itemName, 'Flail');
+    assert.equal(parsed.activityName, 'Activity1');
+    assert.equal(parsed.uses, 1);
+    assert.equal(parsed.cleanToken, 'Flail:Activity1');
+
+    assert.equal(getTokenUseLimit('Flail:Activity1:1'), 1);
+    assert.equal(getTokenUseLimit('>Flail:Activity1:2'), 2);
+    assert.equal(getTokenUseLimit('Flail'), null);
+
+    // Usage limit filtering via tokenUseCounts map with :n notation
+    const limitedFlow = ['(Flail:Act1:1 | Flail:Act2:2)'];
+    const counts = new Map([['flail:act1', 1]]);
+    assert.deepEqual(
+        getSelectableTokensFromFlow(limitedFlow, counts),
+        ['Flail:Act2:2'],
+        'Flail:Act1 should be excluded once 1 use limit is reached'
+    );
 });
 
 test('getMatchingCategoryItems and actorHasAttackOption support spell attack, any attack, and any:ItemA|ItemB pools', () => {
@@ -239,5 +263,62 @@ test('getMatchingCategoryItems and actorHasAttackOption support spell attack, an
     assert.equal(actorHasAttackOption(customActor, 'spell attack'), true);
     assert.equal(actorHasAttackOption(customActor, 'any:Slash|Nonexistent'), true);
     assert.equal(actorHasAttackOption(customActor, 'any:MissingA|MissingB'), false);
+});
+
+test('executeMultiattack handles per-item activity calls, (n) use limits, variable stand-ins, and sub-activity discovery (Yeenoghu Flail)', async () => {
+    const rolledActivities = [];
+
+    const act1 = { id: 'act-1', name: 'Activity1', use: async () => rolledActivities.push('Flail:Activity1') };
+    const act2 = { id: 'act-2', name: 'Activity2', use: async () => rolledActivities.push('Flail:Activity2') };
+    const act3 = { id: 'act-3', name: 'Activity3', use: async () => rolledActivities.push('Flail:Activity3') };
+    const primaryAttackAct = { id: 'act-main', type: 'attack', name: 'Flail Attack', use: async () => rolledActivities.push('Flail Main') };
+
+    const flailItem = {
+        id: 'flail-id',
+        name: 'Flail',
+        system: {
+            activities: new Map([
+                ['act-main', primaryAttackAct],
+                ['act-1', act1],
+                ['act-2', act2],
+                ['act-3', act3]
+            ]),
+            description: { value: 'If it is his turn, Yeenoghu can cause the target to suffer one of the following additional effects, each of which he can apply only once per turn.' }
+        },
+        use: async (options) => {
+            if (options?.activity) {
+                return options.activity.use();
+            }
+            rolledActivities.push('Flail Main');
+        }
+    };
+
+    const multiattackItem = {
+        id: 'ma-yeenoghu',
+        name: 'Multiattack',
+        system: {
+            description: {
+                value: 'Yeenoghu makes three Flail attacks.'
+            }
+        }
+    };
+
+    const yeenoghuActor = {
+        id: 'yeenoghu-id',
+        name: 'Yeenoghu',
+        items: new Map([
+            ['ma-yeenoghu', multiattackItem],
+            ['flail-id', flailItem]
+        ])
+    };
+
+    await executeMultiattack(yeenoghuActor, multiattackItem);
+    assert.equal(rolledActivities.length, 6, 'Should execute 3 Flail attacks and 3 distinct sub-activities');
+    assert.equal(rolledActivities[0], 'Flail Main', 'Step 1: Flail attack');
+    assert.equal(rolledActivities[1], 'Flail:Activity1', 'Step 2: Sub-activity 1 (1 use limit)');
+    assert.equal(rolledActivities[2], 'Flail Main', 'Step 3: Flail attack');
+    assert.equal(rolledActivities[3], 'Flail:Activity2', 'Step 4: Sub-activity 2 (1 use limit)');
+    assert.equal(rolledActivities[4], 'Flail Main', 'Step 5: Flail attack');
+    assert.equal(rolledActivities[5], 'Flail:Activity3', 'Step 6: Sub-activity 3 (1 use limit)');
 });
 
