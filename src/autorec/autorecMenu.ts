@@ -401,35 +401,37 @@ export class AutorecMenuApplication extends BaseApp {
             </div>
         `;
 
-        const sidebarItemsHtml = `
+        const templateSectionHtml = templateEntries.length > 0 ? `
             <div class="bam-sidebar-section">
                 <div class="bam-sidebar-section-header" style="padding: 8px 10px 6px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #fbbf24; background: rgba(30, 36, 54, 0.85); border-bottom: 1px solid #334155; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 1;">
                     <span><i class="fas fa-scroll" style="margin-right: 6px;"></i> Templates</span>
                     <span style="background: #78350f; color: #fde68a; padding: 1px 6px; border-radius: 10px; font-size: 0.68rem;">${templateEntries.length}</span>
                 </div>
-                ${templateEntries.length > 0
-                    ? templateEntries.map(renderSidebarItem).join('')
-                    : `<div style="padding: 8px 12px; font-size: 0.75rem; color: #64748b; font-style: italic;">No templates</div>`}
+                ${templateEntries.map(renderSidebarItem).join('')}
             </div>
+        ` : '';
+
+        const overrideSectionHtml = overrideEntries.length > 0 ? `
             <div class="bam-sidebar-section" style="margin-top: 6px;">
                 <div class="bam-sidebar-section-header" style="padding: 8px 10px 6px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #fbbf24; background: rgba(30, 36, 54, 0.85); border-top: 1px solid #334155; border-bottom: 1px solid #334155; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 1;">
                     <span><i class="fas fa-dragon" style="margin-right: 6px;"></i> Monster Overrides</span>
                     <span style="background: #78350f; color: #fde68a; padding: 1px 6px; border-radius: 10px; font-size: 0.68rem;">${overrideEntries.length}</span>
                 </div>
-                ${overrideEntries.length > 0
-                    ? overrideEntries.map(renderSidebarItem).join('')
-                    : `<div style="padding: 8px 12px; font-size: 0.75rem; color: #64748b; font-style: italic;">No monster overrides</div>`}
+                ${overrideEntries.map(renderSidebarItem).join('')}
             </div>
+        ` : '';
+
+        const llmSectionHtml = llmEntries.length > 0 ? `
             <div class="bam-sidebar-section" style="margin-top: 6px;">
                 <div class="bam-sidebar-section-header" style="padding: 8px 10px 6px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #fbbf24; background: rgba(30, 36, 54, 0.85); border-top: 1px solid #334155; border-bottom: 1px solid #334155; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 1;">
                     <span><i class="fas fa-robot" style="margin-right: 6px;"></i> LLM Generated</span>
                     <span style="background: #78350f; color: #fde68a; padding: 1px 6px; border-radius: 10px; font-size: 0.68rem;">${llmEntries.length}</span>
                 </div>
-                ${llmEntries.length > 0
-                    ? llmEntries.map(renderSidebarItem).join('')
-                    : `<div style="padding: 8px 12px; font-size: 0.75rem; color: #64748b; font-style: italic;">No LLM generated entries</div>`}
+                ${llmEntries.map(renderSidebarItem).join('')}
             </div>
-        `;
+        ` : '';
+
+        const sidebarItemsHtml = `${templateSectionHtml}${overrideSectionHtml}${llmSectionHtml}` || `<div style="padding: 16px 12px; font-size: 0.8rem; color: #64748b; font-style: italic; text-align: center;">No entries found.</div>`;
 
         const displayName = this._pendingName ?? selected?.name ?? '';
         const displayPattern = this._pendingPattern ?? selected?.pattern ?? '';

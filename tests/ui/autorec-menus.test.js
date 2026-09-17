@@ -213,11 +213,11 @@ test('Dropping a monster whose general template exists defaults to Monster Overr
         assert.equal(twoSameAfter.type, 'template');
         assert.equal(twoSameAfter.pattern, '<ACTOR> makes two <ITEM_0> attacks.');
 
-        // Verify sidebar renders Templates, Monster Overrides, and LLM Generated sections
+        // Verify sidebar renders active sections (and hides empty LLM section)
         const renderedDom = await menuApp._renderHTML({}, {});
         assert.ok(renderedDom.innerHTML.includes('Templates'), 'Sidebar should render Templates section');
         assert.ok(renderedDom.innerHTML.includes('Monster Overrides'), 'Sidebar should render Monster Overrides section');
-        assert.ok(renderedDom.innerHTML.includes('LLM Generated'), 'Sidebar should render LLM Generated section');
+        assert.ok(!renderedDom.innerHTML.includes('LLM Generated'), 'Sidebar should NOT render LLM Generated section when empty');
     } finally {
         globalThis.document = origDoc;
     }
@@ -313,6 +313,46 @@ test('LLM fallback stores output in LLM Generated section and supports one-click
         llmClient.queryMultiattackTemplate = origQuery;
         globalThis.game.settings.get = origGetSetting;
         globalThis.document = origDoc;
+    }
+});
+
+test('AutorecMenuApplication hides sidebar sections that have no entries', async () => {
+    await autorecManager.resetToDefaults(false);
+    const origDoc = globalThis.document;
+    globalThis.document = createMockDOM();
+
+    try {
+        // Clear all entries
+        autorecManager.loadSavedEntries([]);
+
+        const menuApp = new AutorecMenuApplication();
+        const html = await menuApp._renderHTML({}, {});
+        const content = html.innerHTML;
+
+        assert.ok(!content.includes('Templates</span>'), 'Should NOT render Templates section header when 0 templates');
+        assert.ok(!content.includes('Monster Overrides</span>'), 'Should NOT render Monster Overrides section header when 0 overrides');
+        assert.ok(!content.includes('LLM Generated</span>'), 'Should NOT render LLM Generated section header when 0 LLM entries');
+        assert.ok(content.includes('No entries found.'), 'Should render No entries found placeholder when empty');
+
+        // Add 1 template entry
+        await autorecManager.registerEntry({
+            id: 'test-template-1',
+            name: 'Test Template',
+            type: 'template',
+            pattern: 'makes two attacks',
+            sequence: [[['<ITEM_0>', '<ITEM_0>']]],
+            enabled: true
+        }, false);
+
+        const htmlWithTemplate = await menuApp._renderHTML({}, {});
+        const contentWithTemplate = htmlWithTemplate.innerHTML;
+
+        assert.ok(contentWithTemplate.includes('Templates</span>'), 'Should render Templates section header when template entries exist');
+        assert.ok(!contentWithTemplate.includes('Monster Overrides</span>'), 'Should NOT render Monster Overrides section header when 0 overrides');
+        assert.ok(!contentWithTemplate.includes('LLM Generated</span>'), 'Should NOT render LLM Generated section header when 0 LLM entries');
+    } finally {
+        globalThis.document = origDoc;
+        await autorecManager.resetToDefaults(false);
     }
 });
 
